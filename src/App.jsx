@@ -1,27 +1,16 @@
-import React, { useState, useMemo } from "react";
-import { AlertTriangle, Shield, Plus, X, Search, LayoutGrid, ListChecks } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { AlertTriangle, Shield, Plus, X, Search, LayoutGrid, ListChecks, LogOut } from "lucide-react";
+import { supabase } from "./supabaseClient.js";
+import Auth from "./Auth.jsx";
 
 // ---------------------------------------------------------------------------
-// STEP 1: Data model + seed data
+// STEP 1: Static config
 // ---------------------------------------------------------------------------
 const CATEGORIES = ["Strategic", "Operational", "Financial", "Compliance", "Cyber", "Reputational"];
 const STATUSES = ["Open", "Mitigating", "Escalated", "Closed"];
 
-const seedRisks = [
-  { id: "R-001", title: "Vendor concentration in core payments processor", category: "Operational", likelihood: 4, impact: 5, owner: "M. Alvarez", status: "Mitigating", mitigation: "Qualifying a second processor for failover.", targetDate: "2026-09-15", lastReviewed: "2026-07-10" },
-  { id: "R-002", title: "Unpatched CVEs on customer-facing API gateway", category: "Cyber", likelihood: 3, impact: 5, owner: "D. Chen", status: "Open", mitigation: "Patch window scheduled next maintenance cycle.", targetDate: "2026-08-01", lastReviewed: "2026-07-18" },
-  { id: "R-003", title: "Regulatory shift in data residency requirements (EU)", category: "Compliance", likelihood: 3, impact: 4, owner: "L. Okafor", status: "Open", mitigation: "Legal review of storage architecture underway.", targetDate: "2026-10-01", lastReviewed: "2026-07-05" },
-  { id: "R-004", title: "FX exposure on unhedged APAC receivables", category: "Financial", likelihood: 3, impact: 3, owner: "S. Patel", status: "Mitigating", mitigation: "Forward contracts being layered in monthly.", targetDate: "2026-08-30", lastReviewed: "2026-07-12" },
-  { id: "R-005", title: "Key-person dependency in platform architecture team", category: "Strategic", likelihood: 2, impact: 4, owner: "M. Alvarez", status: "Open", mitigation: "Cross-training plan drafted, not yet resourced.", targetDate: "2026-11-01", lastReviewed: "2026-06-28" },
-  { id: "R-006", title: "Customer data incident disclosure delay (prior quarter)", category: "Reputational", likelihood: 2, impact: 5, owner: "R. Fischer", status: "Escalated", mitigation: "Comms protocol rewritten; board briefed.", targetDate: "2026-08-15", lastReviewed: "2026-07-20" },
-  { id: "R-007", title: "Manual reconciliation errors in month-end close", category: "Financial", likelihood: 4, impact: 2, owner: "S. Patel", status: "Mitigating", mitigation: "Automation pilot in finance ops.", targetDate: "2026-09-01", lastReviewed: "2026-07-08" },
-  { id: "R-008", title: "Third-party contractor access review overdue", category: "Compliance", likelihood: 3, impact: 2, owner: "L. Okafor", status: "Closed", mitigation: "Access recertified, quarterly cadence set.", targetDate: "2026-07-01", lastReviewed: "2026-07-01" },
-  { id: "R-009", title: "Single-region hosting for order management system", category: "Operational", likelihood: 2, impact: 5, owner: "D. Chen", status: "Open", mitigation: "Multi-region failover in design phase.", targetDate: "2026-12-01", lastReviewed: "2026-06-30" },
-  { id: "R-010", title: "Brand exposure from influencer partnership backlash", category: "Reputational", likelihood: 2, impact: 2, owner: "R. Fischer", status: "Closed", mitigation: "Partnership vetting checklist implemented.", targetDate: "2026-06-15", lastReviewed: "2026-06-15" },
-];
-
 // ---------------------------------------------------------------------------
-// STEP 2: Scoring logic — band a likelihood x impact pair into a risk level
+// STEP 2: Scoring logic
 // ---------------------------------------------------------------------------
 function scoreOf(r) { return r.likelihood * r.impact; }
 
@@ -40,7 +29,31 @@ const RAMP = {
 };
 
 // ---------------------------------------------------------------------------
-// STEP 3: Small building blocks
+// STEP 3: DB <-> app shape mapping
+// (Postgres columns are snake_case; the UI uses camelCase)
+// ---------------------------------------------------------------------------
+function fromDb(row) {
+  return {
+    id: row.id, title: row.title, description: row.description || "",
+    category: row.category, likelihood: row.likelihood, impact: row.impact,
+    ownerId: row.owner_id, owner: row.owner_name, status: row.status,
+    mitigation: row.mitigation || "", targetDate: row.target_date || "",
+    lastReviewed: row.last_reviewed || "",
+  };
+}
+function toDb(r, session, profile) {
+  return {
+    id: r.id, title: r.title, description: r.description, category: r.category,
+    likelihood: r.likelihood, impact: r.impact,
+    owner_id: r.ownerId || session.user.id,
+    owner_name: r.owner || profile?.full_name || session.user.email,
+    status: r.status, mitigation: r.mitigation,
+    target_date: r.targetDate || null, last_reviewed: r.lastReviewed || new Date().toISOString().slice(0, 10),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// STEP 4: Small building blocks
 // ---------------------------------------------------------------------------
 function ScoreBadge({ score }) {
   const band = bandOf(score);
@@ -68,9 +81,7 @@ function StatCard({ label, value, sub }) {
 }
 
 // ---------------------------------------------------------------------------
-// STEP 4: The heatmap — the dashboard's signature element.
-// 5x5 grid of likelihood (rows, high->low) x impact (cols, low->high),
-// with a risk-appetite frontier line separating tolerable from intolerable.
+// STEP 5: Heatmap
 // ---------------------------------------------------------------------------
 function Heatmap({ risks, onCellClick, activeCell }) {
   const grid = useMemo(() => {
@@ -99,7 +110,7 @@ function Heatmap({ risks, onCellClick, activeCell }) {
               const score = l * i;
               const band = bandOf(score);
               const c = RAMP[band.ramp];
-              const isFrontier = l + i === 6; // simple diagonal appetite line
+              const isFrontier = l + i === 6;
               const key = `${l}-${i}`;
               const active = activeCell === key;
               return (
@@ -135,7 +146,7 @@ function Heatmap({ risks, onCellClick, activeCell }) {
 }
 
 // ---------------------------------------------------------------------------
-// STEP 5: Risk register table
+// STEP 6: Risk register table
 // ---------------------------------------------------------------------------
 function RiskTable({ risks, onSelect }) {
   return (
@@ -170,12 +181,14 @@ function RiskTable({ risks, onSelect }) {
 }
 
 // ---------------------------------------------------------------------------
-// STEP 6: Add / edit risk form (side drawer)
+// STEP 7: Add / edit risk drawer. readOnly hides save/delete for viewers
+// and for owners looking at someone else's risk.
 // ---------------------------------------------------------------------------
-function RiskDrawer({ risk, onClose, onSave, onDelete }) {
+function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
   const [form, setForm] = useState(risk || {
-    id: `R-${String(Date.now()).slice(-3)}`, title: "", description: "", category: CATEGORIES[0],
-    likelihood: 3, impact: 3, owner: "", status: "Open", mitigation: "", targetDate: "", lastReviewed: new Date().toISOString().slice(0, 10),
+    id: `R-${String(Date.now()).slice(-6)}`, title: "", description: "", category: CATEGORIES[0],
+    likelihood: 3, impact: 3, owner: "", status: "Open", mitigation: "", targetDate: "",
+    lastReviewed: new Date().toISOString().slice(0, 10),
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -184,46 +197,55 @@ function RiskDrawer({ risk, onClose, onSave, onDelete }) {
       <div onClick={e => e.stopPropagation()} style={{ width: 420, background: "#F5F6F5", height: "100%", padding: 24, overflowY: "auto", borderLeft: "1px solid #C9D1D6" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <h2 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 24, fontWeight: 700, color: "#16233A", margin: 0 }}>
-            {risk ? "Edit risk" : "New risk"}
+            {risk ? (readOnly ? "View risk" : "Edit risk") : "New risk"}
           </h2>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#5B6B7C" }}><X size={20} /></button>
         </div>
 
-        <Field label="Title"><input style={inputStyle} value={form.title} onChange={e => set("title", e.target.value)} /></Field>
-        <Field label="Description"><textarea style={{ ...inputStyle, height: 60 }} value={form.description} onChange={e => set("description", e.target.value)} /></Field>
+        <fieldset disabled={readOnly} style={{ border: "none", padding: 0, margin: 0 }}>
+          <Field label="Title"><input style={inputStyle} value={form.title} onChange={e => set("title", e.target.value)} /></Field>
+          <Field label="Description"><textarea style={{ ...inputStyle, height: 60 }} value={form.description} onChange={e => set("description", e.target.value)} /></Field>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Field label="Category">
-            <select style={inputStyle} value={form.category} onChange={e => set("category", e.target.value)}>
-              {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Status">
-            <select style={inputStyle} value={form.status} onChange={e => set("status", e.target.value)}>
-              {STATUSES.map(s => <option key={s}>{s}</option>)}
-            </select>
-          </Field>
-        </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Category">
+              <select style={inputStyle} value={form.category} onChange={e => set("category", e.target.value)}>
+                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label="Status">
+              <select style={inputStyle} value={form.status} onChange={e => set("status", e.target.value)}>
+                {STATUSES.map(s => <option key={s}>{s}</option>)}
+              </select>
+            </Field>
+          </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Field label={`Likelihood (${form.likelihood})`}>
-            <input type="range" min={1} max={5} value={form.likelihood} onChange={e => set("likelihood", Number(e.target.value))} style={{ width: "100%" }} />
-          </Field>
-          <Field label={`Impact (${form.impact})`}>
-            <input type="range" min={1} max={5} value={form.impact} onChange={e => set("impact", Number(e.target.value))} style={{ width: "100%" }} />
-          </Field>
-        </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label={`Likelihood (${form.likelihood})`}>
+              <input type="range" min={1} max={5} value={form.likelihood} onChange={e => set("likelihood", Number(e.target.value))} style={{ width: "100%" }} />
+            </Field>
+            <Field label={`Impact (${form.impact})`}>
+              <input type="range" min={1} max={5} value={form.impact} onChange={e => set("impact", Number(e.target.value))} style={{ width: "100%" }} />
+            </Field>
+          </div>
 
-        <div style={{ margin: "8px 0 16px" }}><ScoreBadge score={form.likelihood * form.impact} /></div>
+          <div style={{ margin: "8px 0 16px" }}><ScoreBadge score={form.likelihood * form.impact} /></div>
 
-        <Field label="Owner"><input style={inputStyle} value={form.owner} onChange={e => set("owner", e.target.value)} /></Field>
-        <Field label="Mitigation plan"><textarea style={{ ...inputStyle, height: 60 }} value={form.mitigation} onChange={e => set("mitigation", e.target.value)} /></Field>
-        <Field label="Target date"><input type="date" style={inputStyle} value={form.targetDate} onChange={e => set("targetDate", e.target.value)} /></Field>
+          <Field label="Owner"><input style={inputStyle} value={form.owner} onChange={e => set("owner", e.target.value)} /></Field>
+          <Field label="Mitigation plan"><textarea style={{ ...inputStyle, height: 60 }} value={form.mitigation} onChange={e => set("mitigation", e.target.value)} /></Field>
+          <Field label="Target date"><input type="date" style={inputStyle} value={form.targetDate} onChange={e => set("targetDate", e.target.value)} /></Field>
+        </fieldset>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
-          <button onClick={() => onSave(form)} style={primaryBtn}>Save risk</button>
-          {risk && <button onClick={() => onDelete(form.id)} style={dangerBtn}>Delete</button>}
-        </div>
+        {!readOnly && (
+          <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+            <button onClick={() => onSave(form)} style={primaryBtn}>Save risk</button>
+            {risk && <button onClick={() => onDelete(form.id)} style={dangerBtn}>Delete</button>}
+          </div>
+        )}
+        {readOnly && (
+          <div style={{ marginTop: 16, fontSize: 12, color: "#5B6B7C" }}>
+            You don't have permission to edit this risk.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -252,16 +274,32 @@ const dangerBtn = {
 };
 
 // ---------------------------------------------------------------------------
-// STEP 7: Root component — ties everything together with local state
+// STEP 8: Dashboard — everything after login lives here
 // ---------------------------------------------------------------------------
-export default function App() {
-  const [risks, setRisks] = useState(seedRisks);
+function Dashboard({ session, profile }) {
+  const [risks, setRisks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
   const [view, setView] = useState("dashboard");
-  const [drawerRisk, setDrawerRisk] = useState(undefined); // undefined=closed, null=new, obj=edit
+  const [drawerRisk, setDrawerRisk] = useState(undefined);
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [activeCell, setActiveCell] = useState(null);
+
+  const role = profile?.role || "owner";
+  const canCreate = role === "admin" || role === "owner";
+  const canEdit = (r) => role === "admin" || r.ownerId === session.user.id;
+
+  useEffect(() => { loadRisks(); }, []);
+
+  async function loadRisks() {
+    setLoading(true);
+    const { data, error } = await supabase.from("risks").select("*").order("created_at", { ascending: false });
+    if (error) setErrorMsg(error.message);
+    else setRisks(data.map(fromDb));
+    setLoading(false);
+  }
 
   const filtered = useMemo(() => {
     return risks
@@ -277,44 +315,60 @@ export default function App() {
   const criticalCount = openRisks.filter(r => bandOf(scoreOf(r)).label === "Critical").length;
   const topRisks = [...openRisks].sort((a, b) => scoreOf(b) - scoreOf(a)).slice(0, 5);
 
-  const saveRisk = (r) => {
-    setRisks(prev => {
-      const exists = prev.some(x => x.id === r.id);
-      return exists ? prev.map(x => x.id === r.id ? r : x) : [...prev, r];
-    });
+  async function saveRisk(r) {
+    const payload = toDb(r, session, profile);
+    const { error } = await supabase.from("risks").upsert(payload);
+    if (error) { setErrorMsg(error.message); return; }
     setDrawerRisk(undefined);
-  };
-  const deleteRisk = (id) => {
-    setRisks(prev => prev.filter(x => x.id !== id));
+    loadRisks();
+  }
+  async function deleteRisk(id) {
+    const { error } = await supabase.from("risks").delete().eq("id", id);
+    if (error) { setErrorMsg(error.message); return; }
     setDrawerRisk(undefined);
-  };
+    loadRisks();
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: "#EEF1F0", display: "flex" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');`}</style>
 
-      {/* Sidebar */}
       <div style={{ width: 68, background: "#16233A", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, gap: 8 }}>
         <Shield size={22} color="#F5F6F5" style={{ marginBottom: 16 }} />
         <SideBtn active={view === "dashboard"} onClick={() => setView("dashboard")} icon={<LayoutGrid size={18} />} />
         <SideBtn active={view === "register"} onClick={() => setView("register")} icon={<ListChecks size={18} />} />
+        <div style={{ flex: 1 }} />
+        <button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ width: 40, height: 40, marginBottom: 16, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <LogOut size={18} />
+        </button>
       </div>
 
       <div style={{ flex: 1, padding: "24px 32px" }}>
-        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
           <div>
-            <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "#5B6B7C" }}>Meridian Holdings</div>
+            <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "#5B6B7C" }}>
+              Meridian Holdings · {profile?.full_name || session.user.email} · {role}
+            </div>
             <h1 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 32, fontWeight: 700, color: "#16233A", margin: "2px 0 0" }}>
               {view === "dashboard" ? "Enterprise risk exposure" : "Risk register"}
             </h1>
           </div>
-          <button onClick={() => setDrawerRisk(null)} style={{ ...primaryBtn, flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
-            <Plus size={16} /> New risk
-          </button>
+          {canCreate && (
+            <button onClick={() => setDrawerRisk(null)} style={{ ...primaryBtn, flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
+              <Plus size={16} /> New risk
+            </button>
+          )}
         </div>
 
-        {view === "dashboard" ? (
+        {errorMsg && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#EFD3D0", border: "1px solid #8E2E2E", color: "#5F1E1E", borderRadius: 4, padding: "8px 12px", marginBottom: 16, fontSize: 13 }}>
+            <AlertTriangle size={14} /> {errorMsg}
+          </div>
+        )}
+
+        {loading ? (
+          <div style={{ color: "#5B6B7C", fontFamily: "'IBM Plex Sans', sans-serif" }}>Loading risks...</div>
+        ) : view === "dashboard" ? (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
               <StatCard label="Open risks" value={openRisks.length} sub={`${risks.length} total logged`} />
@@ -325,7 +379,6 @@ export default function App() {
 
             <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16, alignItems: "start" }}>
               <Heatmap risks={openRisks} onCellClick={setActiveCell} activeCell={activeCell} />
-
               <div style={{ background: "#FFFFFF", border: "1px solid #C9D1D6", borderRadius: 6, padding: 16 }}>
                 <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5B6B7C", marginBottom: 12 }}>Top 5 exposures</div>
                 {topRisks.map(r => (
@@ -337,6 +390,7 @@ export default function App() {
                     <ScoreBadge score={scoreOf(r)} />
                   </div>
                 ))}
+                {topRisks.length === 0 && <div style={{ color: "#5B6B7C", fontSize: 13 }}>No open risks yet.</div>}
               </div>
             </div>
 
@@ -370,7 +424,13 @@ export default function App() {
       </div>
 
       {drawerRisk !== undefined && (
-        <RiskDrawer risk={drawerRisk} onClose={() => setDrawerRisk(undefined)} onSave={saveRisk} onDelete={deleteRisk} />
+        <RiskDrawer
+          risk={drawerRisk}
+          onClose={() => setDrawerRisk(undefined)}
+          onSave={saveRisk}
+          onDelete={deleteRisk}
+          readOnly={drawerRisk ? !canEdit(drawerRisk) : !canCreate}
+        />
       )}
     </div>
   );
@@ -384,4 +444,34 @@ function SideBtn({ active, onClick, icon }) {
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>{icon}</button>
   );
+}
+
+// ---------------------------------------------------------------------------
+// STEP 9: Root — owns the auth session, renders Auth or Dashboard
+// ---------------------------------------------------------------------------
+export default function App() {
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setChecking(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) { setProfile(null); return; }
+    supabase.from("profiles").select("*").eq("id", session.user.id).single()
+      .then(({ data }) => setProfile(data));
+  }, [session]);
+
+  if (checking) return null;
+  if (!session) return <Auth />;
+  return <Dashboard session={session} profile={profile} />;
 }
