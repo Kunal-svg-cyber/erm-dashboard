@@ -1,35 +1,18 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { AlertTriangle, Shield, Plus, X, Search, LayoutGrid, ListChecks, LogOut, Users, Download, FileText } from "lucide-react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { AlertTriangle, Shield, ShieldCheck, Plus, X, Search, LayoutGrid, ListChecks, LogOut, Users, Download, FileText, Moon, Sun } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import Auth from "./Auth.jsx";
 import AdminPanel from "./AdminPanel.jsx";
 import TrendChart from "./TrendChart.jsx";
+import MFAEnroll from "./MFAEnroll.jsx";
+import { exportExecutivePDF } from "./executiveReport.js";
 import { exportRisksToCSV, exportRisksToPDF } from "./exportUtils.js";
+import { CATEGORIES, STATUSES, scoreOf, bandOf, RAMP } from "./riskLogic.js";
 
 // ---------------------------------------------------------------------------
 // STEP 1: Static config
 // ---------------------------------------------------------------------------
-const CATEGORIES = ["Strategic", "Operational", "Financial", "Compliance", "Cyber", "Reputational"];
-const STATUSES = ["Open", "Mitigating", "Escalated", "Closed"];
 
-// ---------------------------------------------------------------------------
-// STEP 2: Scoring logic
-// ---------------------------------------------------------------------------
-function scoreOf(r) { return r.likelihood * r.impact; }
-
-function bandOf(score) {
-  if (score >= 15) return { label: "Critical", ramp: "crit" };
-  if (score >= 10) return { label: "High", ramp: "high" };
-  if (score >= 5) return { label: "Medium", ramp: "med" };
-  return { label: "Low", ramp: "low" };
-}
-
-const RAMP = {
-  low: { bg: "#E4EEE8", border: "#4C7A5E", text: "#2C4E3B" },
-  med: { bg: "#F5EAD4", border: "#C68A2E", text: "#7A5620" },
-  high: { bg: "#F3DFD6", border: "#B0492E", text: "#7A311E" },
-  crit: { bg: "#EFD3D0", border: "#8E2E2E", text: "#5F1E1E" },
-};
 
 // ---------------------------------------------------------------------------
 // STEP 3: DB <-> app shape mapping
@@ -75,10 +58,10 @@ function ScoreBadge({ score }) {
 
 function StatCard({ label, value, sub }) {
   return (
-    <div style={{ background: "#FFFFFF", border: "1px solid #C9D1D6", borderRadius: 6, padding: "14px 16px" }}>
-      <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5B6B7C" }}>{label}</div>
-      <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 36, fontWeight: 700, color: "#16233A", lineHeight: 1.1, marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, color: "#5B6B7C", marginTop: 2 }}>{sub}</div>}
+    <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, padding: "14px 16px" }}>
+      <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>{label}</div>
+      <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 36, fontWeight: 700, color: "var(--ink)", lineHeight: 1.1, marginTop: 4 }}>{value}</div>
+      {sub && <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
@@ -95,19 +78,19 @@ function Heatmap({ risks, onCellClick, activeCell }) {
   }, [risks]);
 
   return (
-    <div style={{ background: "#FFFFFF", border: "1px solid #C9D1D6", borderRadius: 6, padding: 16 }}>
+    <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, padding: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-        <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5B6B7C" }}>Likelihood &times; impact</span>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#5B6B7C" }}>appetite frontier —</span>
+        <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Likelihood &times; impact</span>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--muted)" }}>appetite frontier —</span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "24px repeat(5, 1fr)", gap: 4 }}>
         <div />
         {[1,2,3,4,5].map(i => (
-          <div key={i} style={{ textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#5B6B7C" }}>I{i}</div>
+          <div key={i} style={{ textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--muted)" }}>I{i}</div>
         ))}
         {[5,4,3,2,1].map(l => (
           <React.Fragment key={l}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#5B6B7C" }}>L{l}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--muted)" }}>L{l}</div>
             {[1,2,3,4,5].map(i => {
               const cellRisks = grid[`${l}-${i}`];
               const score = l * i;
@@ -122,7 +105,7 @@ function Heatmap({ risks, onCellClick, activeCell }) {
                   onClick={() => onCellClick(cellRisks.length ? key : null)}
                   style={{
                     aspectRatio: "1", background: c.bg,
-                    border: active ? `2px solid #16233A` : isFrontier ? `1px dashed ${c.border}` : `1px solid ${c.border}33`,
+                    border: active ? `2px solid var(--ink)` : isFrontier ? `1px dashed ${c.border}` : `1px solid ${c.border}33`,
                     borderRadius: 4, cursor: cellRisks.length ? "pointer" : "default",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 14, color: c.text,
@@ -140,7 +123,7 @@ function Heatmap({ risks, onCellClick, activeCell }) {
         {Object.entries(RAMP).map(([k, c]) => (
           <div key={k} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 10, height: 10, borderRadius: 2, background: c.bg, border: `1px solid ${c.border}` }} />
-            <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, color: "#5B6B7C", textTransform: "capitalize" }}>{k === "crit" ? "critical" : k === "med" ? "medium" : k}</span>
+            <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, color: "var(--muted)", textTransform: "capitalize" }}>{k === "crit" ? "critical" : k === "med" ? "medium" : k}</span>
           </div>
         ))}
       </div>
@@ -153,29 +136,29 @@ function Heatmap({ risks, onCellClick, activeCell }) {
 // ---------------------------------------------------------------------------
 function RiskTable({ risks, onSelect }) {
   return (
-    <div style={{ background: "#FFFFFF", border: "1px solid #C9D1D6", borderRadius: 6, overflow: "hidden" }}>
+    <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13 }}>
         <thead>
-          <tr style={{ background: "#EEF1F0", borderBottom: "1px solid #C9D1D6" }}>
+          <tr style={{ background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
             {["ID", "Title", "Category", "Score", "Owner", "Status", "Reviewed"].map(h => (
-              <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#5B6B7C", fontWeight: 600 }}>{h}</th>
+              <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 600 }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {risks.map(r => (
-            <tr key={r.id} onClick={() => onSelect(r)} style={{ borderBottom: "1px solid #E5E8EA", cursor: "pointer" }}>
-              <td style={{ padding: "10px 12px", fontFamily: "'IBM Plex Mono', monospace", color: "#5B6B7C" }}>{r.id}</td>
-              <td style={{ padding: "10px 12px", color: "#16233A", maxWidth: 280 }}>{r.title}</td>
-              <td style={{ padding: "10px 12px", color: "#5B6B7C" }}>{r.category}</td>
+            <tr key={r.id} onClick={() => onSelect(r)} style={{ borderBottom: "1px solid var(--row-border)", cursor: "pointer" }}>
+              <td style={{ padding: "10px 12px", fontFamily: "'IBM Plex Mono', monospace", color: "var(--muted)" }}>{r.id}</td>
+              <td style={{ padding: "10px 12px", color: "var(--ink)", maxWidth: 280 }}>{r.title}</td>
+              <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{r.category}</td>
               <td style={{ padding: "10px 12px" }}><ScoreBadge score={scoreOf(r)} /></td>
-              <td style={{ padding: "10px 12px", color: "#5B6B7C" }}>{r.owner}</td>
-              <td style={{ padding: "10px 12px", color: "#5B6B7C" }}>{r.status}</td>
-              <td style={{ padding: "10px 12px", color: "#5B6B7C", fontFamily: "'IBM Plex Mono', monospace" }}>{r.lastReviewed}</td>
+              <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{r.owner}</td>
+              <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{r.status}</td>
+              <td style={{ padding: "10px 12px", color: "var(--muted)", fontFamily: "'IBM Plex Mono', monospace" }}>{r.lastReviewed}</td>
             </tr>
           ))}
           {risks.length === 0 && (
-            <tr><td colSpan={7} style={{ padding: 24, textAlign: "center", color: "#5B6B7C" }}>No risks match the current filters.</td></tr>
+            <tr><td colSpan={7} style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>No risks match the current filters.</td></tr>
           )}
         </tbody>
       </table>
@@ -197,12 +180,12 @@ function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(22,35,58,0.35)", display: "flex", justifyContent: "flex-end", zIndex: 50 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 420, background: "#F5F6F5", height: "100%", padding: 24, overflowY: "auto", borderLeft: "1px solid #C9D1D6" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 420, background: "#F5F6F5", height: "100%", padding: 24, overflowY: "auto", borderLeft: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 24, fontWeight: 700, color: "#16233A", margin: 0 }}>
+          <h2 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 24, fontWeight: 700, color: "var(--ink)", margin: 0 }}>
             {risk ? (readOnly ? "View risk" : "Edit risk") : "New risk"}
           </h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#5B6B7C" }}><X size={20} /></button>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={20} /></button>
         </div>
 
         <fieldset disabled={readOnly} style={{ border: "none", padding: 0, margin: 0 }}>
@@ -245,7 +228,7 @@ function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
           </div>
         )}
         {readOnly && (
-          <div style={{ marginTop: 16, fontSize: 12, color: "#5B6B7C" }}>
+          <div style={{ marginTop: 16, fontSize: 12, color: "var(--muted)" }}>
             You don't have permission to edit this risk.
           </div>
         )}
@@ -257,29 +240,29 @@ function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
 function Field({ label, children }) {
   return (
     <div style={{ marginBottom: 12 }}>
-      <label style={{ display: "block", fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#5B6B7C", marginBottom: 4 }}>{label}</label>
+      <label style={{ display: "block", fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", marginBottom: 4 }}>{label}</label>
       {children}
     </div>
   );
 }
 
 const inputStyle = {
-  width: "100%", boxSizing: "border-box", padding: "8px 10px", border: "1px solid #C9D1D6",
-  borderRadius: 4, fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13, background: "#FFFFFF", color: "#16233A",
+  width: "100%", boxSizing: "border-box", padding: "8px 10px", border: "1px solid var(--border)",
+  borderRadius: 4, fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13, background: "var(--card)", color: "var(--ink)",
 };
 const primaryBtn = {
   flex: 1, padding: "10px 16px", background: "#16233A", color: "#F5F6F5", border: "none",
   borderRadius: 4, fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
 };
 const dangerBtn = {
-  padding: "10px 16px", background: "#FFFFFF", color: "#8E2E2E", border: "1px solid #8E2E2E",
+  padding: "10px 16px", background: "var(--card)", color: "#8E2E2E", border: "1px solid #8E2E2E",
   borderRadius: 4, fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
 };
 
 // ---------------------------------------------------------------------------
 // STEP 8: Dashboard — everything after login lives here
 // ---------------------------------------------------------------------------
-function Dashboard({ session, profile }) {
+function Dashboard({ session, profile, theme, setTheme }) {
   const [risks, setRisks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
@@ -289,6 +272,8 @@ function Dashboard({ session, profile }) {
   const [catFilter, setCatFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [activeCell, setActiveCell] = useState(null);
+  const reportRef = useRef(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const role = profile?.role || "owner";
   const canCreate = role === "admin" || role === "owner";
@@ -332,8 +317,22 @@ function Dashboard({ session, profile }) {
     loadRisks();
   }
 
+  async function handleExecutivePdf() {
+    if (!reportRef.current) return;
+    setGeneratingPdf(true);
+    try {
+      await exportExecutivePDF(reportRef.current, {
+        orgName: "Meridian Holdings",
+        stats: { open: openRisks.length, avg: avgScore, critical: criticalCount },
+        topRisks,
+      });
+    } finally {
+      setGeneratingPdf(false);
+    }
+  }
+
   return (
-    <div style={{ minHeight: "100vh", background: "#EEF1F0", display: "flex" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');`}</style>
 
       <div style={{ width: 68, background: "#16233A", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, gap: 8 }}>
@@ -343,7 +342,11 @@ function Dashboard({ session, profile }) {
         {role === "admin" && (
           <SideBtn active={view === "admin"} onClick={() => setView("admin")} icon={<Users size={18} />} />
         )}
+        <SideBtn active={view === "security"} onClick={() => setView("security")} icon={<ShieldCheck size={18} />} />
         <div style={{ flex: 1 }} />
+        <button onClick={() => setTheme(t => t === "light" ? "dark" : "light")} title="Toggle dark mode" style={{ width: 40, height: 40, marginBottom: 4, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+        </button>
         <button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ width: 40, height: 40, marginBottom: 16, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <LogOut size={18} />
         </button>
@@ -352,24 +355,29 @@ function Dashboard({ session, profile }) {
       <div style={{ flex: 1, padding: "24px 32px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
           <div>
-            <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "#5B6B7C" }}>
+            <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)" }}>
               Meridian Holdings · {profile?.full_name || session.user.email} · {role}
             </div>
-            <h1 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 32, fontWeight: 700, color: "#16233A", margin: "2px 0 0" }}>
-              {view === "dashboard" ? "Enterprise risk exposure" : view === "register" ? "Risk register" : "User administration"}
+            <h1 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 32, fontWeight: 700, color: "var(--ink)", margin: "2px 0 0" }}>
+              {view === "dashboard" ? "Enterprise risk exposure" : view === "register" ? "Risk register" : view === "admin" ? "User administration" : "Account security"}
             </h1>
           </div>
+          {view === "dashboard" && (
+            <button onClick={handleExecutivePdf} disabled={generatingPdf} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", marginRight: canCreate ? 8 : 0, display: "flex", alignItems: "center", gap: 6 }}>
+              <FileText size={14} /> {generatingPdf ? "Generating..." : "Executive PDF"}
+            </button>
+          )}
           {view === "register" && (
             <div style={{ display: "flex", gap: 8, marginRight: canCreate ? 8 : 0 }}>
-              <button onClick={() => exportRisksToCSV(filtered)} style={{ ...dangerBtn, color: "#16233A", borderColor: "#C9D1D6", display: "flex", alignItems: "center", gap: 6 }}>
+              <button onClick={() => exportRisksToCSV(filtered)} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
                 <Download size={14} /> CSV
               </button>
-              <button onClick={() => exportRisksToPDF(filtered)} style={{ ...dangerBtn, color: "#16233A", borderColor: "#C9D1D6", display: "flex", alignItems: "center", gap: 6 }}>
+              <button onClick={() => exportRisksToPDF(filtered)} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
                 <FileText size={14} /> PDF
               </button>
             </div>
           )}
-          {canCreate && view !== "admin" && (
+          {canCreate && (view === "dashboard" || view === "register") && (
             <button onClick={() => setDrawerRisk(null)} style={{ ...primaryBtn, flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
               <Plus size={16} /> New risk
             </button>
@@ -383,42 +391,44 @@ function Dashboard({ session, profile }) {
         )}
 
         {loading ? (
-          <div style={{ color: "#5B6B7C", fontFamily: "'IBM Plex Sans', sans-serif" }}>Loading risks...</div>
+          <div style={{ color: "var(--muted)", fontFamily: "'IBM Plex Sans', sans-serif" }}>Loading risks...</div>
         ) : view === "dashboard" ? (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-              <StatCard label="Open risks" value={openRisks.length} sub={`${risks.length} total logged`} />
-              <StatCard label="Avg. exposure score" value={avgScore} sub="likelihood x impact" />
-              <StatCard label="Critical risks" value={criticalCount} sub="score 15+" />
-              <StatCard label="Categories tracked" value={CATEGORIES.length} />
-            </div>
+            <div ref={reportRef} style={{ background: "var(--bg)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+                <StatCard label="Open risks" value={openRisks.length} sub={`${risks.length} total logged`} />
+                <StatCard label="Avg. exposure score" value={avgScore} sub="likelihood x impact" />
+                <StatCard label="Critical risks" value={criticalCount} sub="score 15+" />
+                <StatCard label="Categories tracked" value={CATEGORIES.length} />
+              </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <TrendChart />
-            </div>
+              <div style={{ marginBottom: 16 }}>
+                <TrendChart />
+              </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16, alignItems: "start" }}>
-              <Heatmap risks={openRisks} onCellClick={setActiveCell} activeCell={activeCell} />
-              <div style={{ background: "#FFFFFF", border: "1px solid #C9D1D6", borderRadius: 6, padding: 16 }}>
-                <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "#5B6B7C", marginBottom: 12 }}>Top 5 exposures</div>
-                {topRisks.map(r => (
-                  <div key={r.id} onClick={() => setDrawerRisk(r)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #E5E8EA", cursor: "pointer" }}>
-                    <div>
-                      <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13, color: "#16233A" }}>{r.title}</div>
-                      <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, color: "#5B6B7C" }}>{r.owner} · {r.category}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16, alignItems: "start" }}>
+                <Heatmap risks={openRisks} onCellClick={setActiveCell} activeCell={activeCell} />
+                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, padding: 16 }}>
+                  <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)", marginBottom: 12 }}>Top 5 exposures</div>
+                  {topRisks.map(r => (
+                    <div key={r.id} onClick={() => setDrawerRisk(r)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--row-border)", cursor: "pointer" }}>
+                      <div>
+                        <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13, color: "var(--ink)" }}>{r.title}</div>
+                        <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, color: "var(--muted)" }}>{r.owner} · {r.category}</div>
+                      </div>
+                      <ScoreBadge score={scoreOf(r)} />
                     </div>
-                    <ScoreBadge score={scoreOf(r)} />
-                  </div>
-                ))}
-                {topRisks.length === 0 && <div style={{ color: "#5B6B7C", fontSize: 13 }}>No open risks yet.</div>}
+                  ))}
+                  {topRisks.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>No open risks yet.</div>}
+                </div>
               </div>
             </div>
 
             {activeCell && (
               <div style={{ marginTop: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, color: "#5B6B7C" }}>Filtered to heatmap cell {activeCell}</span>
-                  <button onClick={() => setActiveCell(null)} style={{ background: "none", border: "none", color: "#16233A", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Clear</button>
+                  <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, color: "var(--muted)" }}>Filtered to heatmap cell {activeCell}</span>
+                  <button onClick={() => setActiveCell(null)} style={{ background: "none", border: "none", color: "var(--ink)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Clear</button>
                 </div>
                 <RiskTable risks={filtered} onSelect={setDrawerRisk} />
               </div>
@@ -428,7 +438,7 @@ function Dashboard({ session, profile }) {
           <>
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
               <div style={{ position: "relative", flex: 1 }}>
-                <Search size={15} style={{ position: "absolute", left: 10, top: 10, color: "#5B6B7C" }} />
+                <Search size={15} style={{ position: "absolute", left: 10, top: 10, color: "var(--muted)" }} />
                 <input placeholder="Search risks..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: 32 }} />
               </div>
               <select style={{ ...inputStyle, width: 180 }} value={catFilter} onChange={e => setCatFilter(e.target.value)}>
@@ -440,8 +450,10 @@ function Dashboard({ session, profile }) {
             </div>
             <RiskTable risks={filtered} onSelect={setDrawerRisk} />
           </>
-        ) : (
+        ) : view === "admin" ? (
           <AdminPanel currentUserId={session.user.id} />
+        ) : (
+          <MFAEnroll />
         )}
       </div>
 
@@ -469,9 +481,9 @@ function SideBtn({ active, onClick, icon }) {
 }
 
 // ---------------------------------------------------------------------------
-// STEP 9: Root — owns the auth session, renders Auth or Dashboard
+// STEP 9: AuthGate — owns the auth session, renders Auth or Dashboard
 // ---------------------------------------------------------------------------
-export default function App() {
+function AuthGate({ theme, setTheme }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [checking, setChecking] = useState(true);
@@ -495,5 +507,21 @@ export default function App() {
 
   if (checking) return null;
   if (!session) return <Auth />;
-  return <Dashboard session={session} profile={profile} />;
+  return <Dashboard session={session} profile={profile} theme={theme} setTheme={setTheme} />;
+}
+
+// ---------------------------------------------------------------------------
+// STEP 10: App — top-level theme provider, wraps everything in CSS variables
+// ---------------------------------------------------------------------------
+export default function App() {
+  const [theme, setTheme] = useState("light");
+  return (
+    <div data-theme={theme}>
+      <style>{`
+        [data-theme="light"] { --bg: #EEF1F0; --card: #FFFFFF; --border: #C9D1D6; --row-border: #E5E8EA; --ink: #16233A; --muted: #5B6B7C; }
+        [data-theme="dark"] { --bg: #0E1620; --card: #16202C; --border: #2B3A48; --row-border: #22303C; --ink: #EAEEF1; --muted: #8FA0AF; }
+      `}</style>
+      <AuthGate theme={theme} setTheme={setTheme} />
+    </div>
+  );
 }
