@@ -5,6 +5,7 @@ import Auth from "./Auth.jsx";
 import AdminPanel from "./AdminPanel.jsx";
 import TrendChart from "./TrendChart.jsx";
 import MFAEnroll from "./MFAEnroll.jsx";
+import MFAChallenge from "./MFAChallenge.jsx";
 import { exportExecutivePDF } from "./executiveReport.js";
 import { exportRisksToCSV, exportRisksToPDF } from "./exportUtils.js";
 import { CATEGORIES, STATUSES, scoreOf, bandOf, RAMP } from "./riskLogic.js";
@@ -487,14 +488,27 @@ function AuthGate({ theme, setTheme }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [checking, setChecking] = useState(true);
+  const [needsMfa, setNeedsMfa] = useState(false);
+
+  async function checkMfa() {
+    const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (data && data.nextLevel === "aal2" && data.currentLevel !== "aal2") {
+      setNeedsMfa(true);
+    } else {
+      setNeedsMfa(false);
+    }
+  }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
+      if (session) await checkMfa();
       setChecking(false);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
+      if (session) await checkMfa();
+      else setNeedsMfa(false);
     });
     return () => listener.subscription.unsubscribe();
   }, []);
@@ -507,6 +521,7 @@ function AuthGate({ theme, setTheme }) {
 
   if (checking) return null;
   if (!session) return <Auth />;
+  if (needsMfa) return <MFAChallenge onVerified={() => setNeedsMfa(false)} />;
   return <Dashboard session={session} profile={profile} theme={theme} setTheme={setTheme} />;
 }
 
