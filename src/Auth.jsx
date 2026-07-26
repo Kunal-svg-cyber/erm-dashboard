@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { supabase } from "./supabaseClient.js";
 
 const inputStyle = {
@@ -6,6 +6,43 @@ const inputStyle = {
   borderRadius: 4, fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13, background: "#FFFFFF", color: "#16233A",
   marginBottom: 12,
 };
+
+// Client-side password strength check.
+// Supabase's leaked-password (HaveIBeenPwned) check is a paid-plan feature,
+// so this is the free-tier substitute: enforce length + character variety
+// so at least trivially weak passwords are rejected before they ever reach Supabase.
+function passwordStrength(pw) {
+  const checks = {
+    length: pw.length >= 8,
+    upper: /[A-Z]/.test(pw),
+    lower: /[a-z]/.test(pw),
+    number: /[0-9]/.test(pw),
+    symbol: /[^A-Za-z0-9]/.test(pw),
+  };
+  const score = Object.values(checks).filter(Boolean).length;
+  return { checks, score, valid: checks.length && score >= 3 };
+}
+
+function StrengthMeter({ password }) {
+  const { score } = passwordStrength(password);
+  const labels = ["Too weak", "Weak", "Fair", "Good", "Strong"];
+  const colors = ["#8E2E2E", "#B0492E", "#C68A2E", "#7A9A5E", "#4C7A5E"];
+  const idx = password.length === 0 ? 0 : Math.max(1, score);
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+        {[0, 1, 2, 3, 4].map(i => (
+          <div key={i} style={{ height: 4, flex: 1, borderRadius: 2, background: i < idx ? colors[idx - 1] : "#E5E8EA" }} />
+        ))}
+      </div>
+      {password.length > 0 && (
+        <div style={{ fontSize: 11, color: colors[idx - 1] || "#5B6B7C" }}>
+          {labels[idx - 1] || "Too weak"} &middot; use 8+ characters with a mix of upper/lowercase, numbers, and symbols
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Auth() {
   const [mode, setMode] = useState("signin"); // signin | signup | mfa
@@ -17,9 +54,19 @@ export default function Auth() {
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const strength = useMemo(() => passwordStrength(password), [password]);
+  const signupBlocked = mode === "signup" && !strength.valid;
+
   const submit = async (e) => {
     e.preventDefault();
-    setError(""); setInfo(""); setBusy(true);
+    setError(""); setInfo("");
+
+    if (mode === "signup" && !strength.valid) {
+      setError("Please choose a stronger password (8+ characters, mix of upper/lowercase, numbers, and symbols).");
+      return;
+    }
+
+    setBusy(true);
     if (mode === "signin") {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) { setError(error.message); setBusy(false); return; }
@@ -71,17 +118,25 @@ export default function Auth() {
             {mode === "signup" && (
               <input style={inputStyle} placeholder="Full name" value={fullName} onChange={e => setFullName(e.target.value)} required />
             )}
-            <input style={inputStyle} type="email" placeholder="Work email" value={email} onChange={e => setEmail(e.target.value)} required />
-            <input style={inputStyle} type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+            <input style={inputStyle} type="email" placeholder="Work email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />
+            <input
+              style={inputStyle} type="password" placeholder="Password" value={password}
+              onChange={e => setPassword(e.target.value)} required minLength={mode === "signup" ? 8 : 6}
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            />
+            {mode === "signup" && <StrengthMeter password={password} />}
           </>
         )}
 
         {error && <div style={{ color: "#8E2E2E", fontSize: 12, marginBottom: 10 }}>{error}</div>}
         {info && <div style={{ color: "#2C4E3B", fontSize: 12, marginBottom: 10 }}>{info}</div>}
 
-        <button type="submit" disabled={busy} style={{
-          width: "100%", padding: "10px 16px", background: "#16233A", color: "#F5F6F5", border: "none",
-          borderRadius: 4, fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
+        <button type="submit" disabled={busy || signupBlocked} style={{
+          width: "100%", padding: "10px 16px",
+          background: (busy || signupBlocked) ? "#8B98A6" : "#16233A",
+          color: "#F5F6F5", border: "none",
+          borderRadius: 4, fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600, fontSize: 13,
+          cursor: (busy || signupBlocked) ? "not-allowed" : "pointer",
         }}>
           {busy ? "Please wait..." : mode === "signin" ? "Sign in" : mode === "mfa" ? "Verify" : "Sign up"}
         </button>
@@ -89,14 +144,14 @@ export default function Auth() {
         <div style={{ marginTop: 14, textAlign: "center", fontSize: 12, color: "#5B6B7C" }}>
           {mode === "signin" ? (
             <>New here? <a href="#" onClick={e => { e.preventDefault(); setMode("signup"); setError(""); }} style={{ color: "#16233A" }}>Create an account</a></>
-          ) : (
+          ) : mode === "signup" ? (
             <>Already have an account? <a href="#" onClick={e => { e.preventDefault(); setMode("signin"); setError(""); }} style={{ color: "#16233A" }}>Sign in</a></>
-          )}
+          ) : null}
         </div>
 
         {mode === "signup" && (
           <div style={{ marginTop: 10, fontSize: 11, color: "#5B6B7C" }}>
-            New accounts default to the "owner" role. An admin can upgrade your role from the Supabase dashboard.
+            New accounts default to the "viewer" role. An admin can upgrade your role from the Admin panel.
           </div>
         )}
       </form>
