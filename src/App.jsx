@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { AlertTriangle, Shield, Plus, X, Search, LayoutGrid, ListChecks, LogOut } from "lucide-react";
+import { AlertTriangle, Shield, Plus, X, Search, LayoutGrid, ListChecks, LogOut, Users, Download, FileText } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import Auth from "./Auth.jsx";
+import AdminPanel from "./AdminPanel.jsx";
+import TrendChart from "./TrendChart.jsx";
+import { exportRisksToCSV, exportRisksToPDF } from "./exportUtils.js";
 
 // ---------------------------------------------------------------------------
 // STEP 1: Static config
@@ -289,7 +292,7 @@ function Dashboard({ session, profile }) {
 
   const role = profile?.role || "owner";
   const canCreate = role === "admin" || role === "owner";
-  const canEdit = (r) => role === "admin" || (role === "owner" && r.ownerId === session.user.id);
+  const canEdit = (r) => role === "admin" || r.ownerId === session.user.id;
 
   useEffect(() => { loadRisks(); }, []);
 
@@ -337,6 +340,9 @@ function Dashboard({ session, profile }) {
         <Shield size={22} color="#F5F6F5" style={{ marginBottom: 16 }} />
         <SideBtn active={view === "dashboard"} onClick={() => setView("dashboard")} icon={<LayoutGrid size={18} />} />
         <SideBtn active={view === "register"} onClick={() => setView("register")} icon={<ListChecks size={18} />} />
+        {role === "admin" && (
+          <SideBtn active={view === "admin"} onClick={() => setView("admin")} icon={<Users size={18} />} />
+        )}
         <div style={{ flex: 1 }} />
         <button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ width: 40, height: 40, marginBottom: 16, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <LogOut size={18} />
@@ -350,10 +356,20 @@ function Dashboard({ session, profile }) {
               Meridian Holdings · {profile?.full_name || session.user.email} · {role}
             </div>
             <h1 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 32, fontWeight: 700, color: "#16233A", margin: "2px 0 0" }}>
-              {view === "dashboard" ? "Enterprise risk exposure" : "Risk register"}
+              {view === "dashboard" ? "Enterprise risk exposure" : view === "register" ? "Risk register" : "User administration"}
             </h1>
           </div>
-          {canCreate && (
+          {view === "register" && (
+            <div style={{ display: "flex", gap: 8, marginRight: canCreate ? 8 : 0 }}>
+              <button onClick={() => exportRisksToCSV(filtered)} style={{ ...dangerBtn, color: "#16233A", borderColor: "#C9D1D6", display: "flex", alignItems: "center", gap: 6 }}>
+                <Download size={14} /> CSV
+              </button>
+              <button onClick={() => exportRisksToPDF(filtered)} style={{ ...dangerBtn, color: "#16233A", borderColor: "#C9D1D6", display: "flex", alignItems: "center", gap: 6 }}>
+                <FileText size={14} /> PDF
+              </button>
+            </div>
+          )}
+          {canCreate && view !== "admin" && (
             <button onClick={() => setDrawerRisk(null)} style={{ ...primaryBtn, flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
               <Plus size={16} /> New risk
             </button>
@@ -375,6 +391,10 @@ function Dashboard({ session, profile }) {
               <StatCard label="Avg. exposure score" value={avgScore} sub="likelihood x impact" />
               <StatCard label="Critical risks" value={criticalCount} sub="score 15+" />
               <StatCard label="Categories tracked" value={CATEGORIES.length} />
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <TrendChart />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16, alignItems: "start" }}>
@@ -404,7 +424,7 @@ function Dashboard({ session, profile }) {
               </div>
             )}
           </>
-        ) : (
+        ) : view === "register" ? (
           <>
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
               <div style={{ position: "relative", flex: 1 }}>
@@ -420,6 +440,8 @@ function Dashboard({ session, profile }) {
             </div>
             <RiskTable risks={filtered} onSelect={setDrawerRisk} />
           </>
+        ) : (
+          <AdminPanel currentUserId={session.user.id} />
         )}
       </div>
 
