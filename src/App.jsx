@@ -289,7 +289,7 @@ function Dashboard({ session, profile }) {
 
   const role = profile?.role || "owner";
   const canCreate = role === "admin" || role === "owner";
-  const canEdit = (r) => role === "admin" || r.ownerId === session.user.id;
+  const canEdit = (r) => role === "admin" || (role === "owner" && r.ownerId === session.user.id);
 
   useEffect(() => { loadRisks(); }, []);
 
