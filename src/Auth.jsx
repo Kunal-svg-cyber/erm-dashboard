@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { supabase } from "./supabaseClient.js";
 
 const inputStyle = {
@@ -43,6 +43,44 @@ function StrengthMeter({ password }) {
   );
 }
 
+// Client-side brute-force defense-in-depth. Supabase enforces its own
+// server-side rate limits regardless (Authentication -> Rate Limits) —
+// this just adds a fast, visible lockout in the UI and slows down
+// scripted guessing before it ever reaches the network. Keyed per-email
+// in localStorage so a page refresh doesn't reset the counter.
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_BASE_SECONDS = 30;
+
+function getAttemptState(email) {
+  try {
+    const raw = localStorage.getItem(`login_attempts:${email.toLowerCase()}`);
+    return raw ? JSON.parse(raw) : { count: 0, lockedUntil: 0, lockouts: 0 };
+  } catch {
+    return { count: 0, lockedUntil: 0, lockouts: 0 };
+  }
+}
+function setAttemptState(email, state) {
+  try {
+    localStorage.setItem(`login_attempts:${email.toLowerCase()}`, JSON.stringify(state));
+  } catch { /* ignore storage errors */ }
+}
+function registerFailedAttempt(email) {
+  const state = getAttemptState(email);
+  const count = state.count + 1;
+  if (count >= MAX_ATTEMPTS) {
+    const lockouts = state.lockouts + 1;
+    const seconds = LOCKOUT_BASE_SECONDS * Math.pow(2, lockouts - 1); // 30s, 60s, 120s...
+    const lockedUntil = Date.now() + seconds * 1000;
+    setAttemptState(email, { count: 0, lockedUntil, lockouts });
+    return { locked: true, seconds };
+  }
+  setAttemptState(email, { ...state, count });
+  return { locked: false, remaining: MAX_ATTEMPTS - count };
+}
+function clearAttempts(email) {
+  setAttemptState(email, { count: 0, lockedUntil: 0, lockouts: 0 });
+}
+
 export default function Auth() {
   const [mode, setMode] = useState("signin"); // signin | signup
   const [email, setEmail] = useState("");
@@ -51,6 +89,13 @@ export default function Auth() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lockedSeconds, setLockedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (lockedSeconds <= 0) return;
+    const t = setInterval(() => setLockedSeconds(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [lockedSeconds]);
 
   const strength = useMemo(() => passwordStrength(password), [password]);
   const signupBlocked = mode === "signup" && !strength.valid;
@@ -66,11 +111,27 @@ export default function Auth() {
 
     setBusy(true);
     if (mode === "signin") {
-      // Just authenticate here. AuthGate (in App.jsx) is responsible for
-      // checking whether this account also needs a 2FA code before it
-      // lets the person into the dashboard.
+      const existing = getAttemptState(email);
+      if (existing.lockedUntil > Date.now()) {
+        setLockedSeconds(Math.ceil((existing.lockedUntil - Date.now()) / 1000));
+        setError("Too many failed attempts. Please wait before trying again.");
+        setBusy(false);
+        return;
+      }
+
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setError(error.message);
+      if (error) {
+        const result = registerFailedAttempt(email);
+        if (result.locked) {
+          setLockedSeconds(result.seconds);
+          setError(`Too many failed attempts. Locked for ${result.seconds} seconds.`);
+        } else {
+          setError(`${error.message} (${result.remaining} attempt${result.remaining === 1 ? "" : "s"} remaining before lockout)`);
+        }
+        setBusy(false);
+        return;
+      }
+      clearAttempts(email);
     } else {
       const { error } = await supabase.auth.signUp({
         email, password,
@@ -104,15 +165,18 @@ export default function Auth() {
 
         {error && <div style={{ color: "#8E2E2E", fontSize: 12, marginBottom: 10 }}>{error}</div>}
         {info && <div style={{ color: "#2C4E3B", fontSize: 12, marginBottom: 10 }}>{info}</div>}
+        {lockedSeconds > 0 && (
+          <div style={{ color: "#8E2E2E", fontSize: 12, marginBottom: 10 }}>Try again in {lockedSeconds}s</div>
+        )}
 
-        <button type="submit" disabled={busy || signupBlocked} style={{
+        <button type="submit" disabled={busy || signupBlocked || lockedSeconds > 0} style={{
           width: "100%", padding: "10px 16px",
-          background: (busy || signupBlocked) ? "#8B98A6" : "#16233A",
+          background: (busy || signupBlocked || lockedSeconds > 0) ? "#8B98A6" : "#16233A",
           color: "#F5F6F5", border: "none",
           borderRadius: 4, fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600, fontSize: 13,
-          cursor: (busy || signupBlocked) ? "not-allowed" : "pointer",
+          cursor: (busy || signupBlocked || lockedSeconds > 0) ? "not-allowed" : "pointer",
         }}>
-          {busy ? "Please wait..." : mode === "signin" ? "Sign in" : "Sign up"}
+          {busy ? "Please wait..." : lockedSeconds > 0 ? `Locked (${lockedSeconds}s)` : mode === "signin" ? "Sign in" : "Sign up"}
         </button>
 
         <div style={{ marginTop: 14, textAlign: "center", fontSize: 12, color: "#5B6B7C" }}>

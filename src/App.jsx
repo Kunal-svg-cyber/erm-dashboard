@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { AlertTriangle, Shield, ShieldCheck, Plus, X, Search, LayoutGrid, ListChecks, LogOut, Users, Download, FileText, Moon, Sun } from "lucide-react";
+import { AlertTriangle, Shield, ShieldCheck, Plus, X, Search, LayoutGrid, ListChecks, LogOut, Users, Download, Upload, FileText, Moon, Sun } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import Auth from "./Auth.jsx";
 import AdminPanel from "./AdminPanel.jsx";
@@ -8,6 +8,7 @@ import MFAEnroll from "./MFAEnroll.jsx";
 import MFAChallenge from "./MFAChallenge.jsx";
 import { exportExecutivePDF } from "./executiveReport.js";
 import { exportRisksToCSV, exportRisksToPDF } from "./exportUtils.js";
+import { parseRisksCSV } from "./importUtils.js";
 import { CATEGORIES, STATUSES, scoreOf, bandOf, RAMP } from "./riskLogic.js";
 
 // ---------------------------------------------------------------------------
@@ -137,8 +138,8 @@ function Heatmap({ risks, onCellClick, activeCell }) {
 // ---------------------------------------------------------------------------
 function RiskTable({ risks, onSelect }) {
   return (
-    <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13 }}>
+    <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, overflowX: "auto" }}>
+      <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13 }}>
         <thead>
           <tr style={{ background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
             {["ID", "Title", "Category", "Score", "Owner", "Status", "Reviewed"].map(h => (
@@ -275,6 +276,9 @@ function Dashboard({ session, profile, theme, setTheme }) {
   const [activeCell, setActiveCell] = useState(null);
   const reportRef = useRef(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const csvInputRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState("");
 
   const role = profile?.role || "owner";
   const canCreate = role === "admin" || role === "owner";
@@ -332,11 +336,47 @@ function Dashboard({ session, profile, theme, setTheme }) {
     }
   }
 
-  return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');`}</style>
+  async function handleCsvImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportMsg("");
+    try {
+      const { rows, errors } = await parseRisksCSV(file);
+      const validRows = rows.filter((_, i) => !errors.some(err => err.startsWith(`Row ${i + 2}:`)));
+      const payload = validRows.map(r => toDb(r, session, profile));
+      if (payload.length > 0) {
+        const { error } = await supabase.from("risks").upsert(payload);
+        if (error) { setErrorMsg(error.message); setImporting(false); return; }
+      }
+      setImportMsg(`Imported ${payload.length} risk(s).${errors.length ? ` Skipped ${errors.length} row(s): ${errors.slice(0, 3).join("; ")}${errors.length > 3 ? "..." : ""}` : ""}`);
+      loadRisks();
+    } catch (err) {
+      setErrorMsg("Failed to parse CSV: " + err.message);
+    }
+    setImporting(false);
+    e.target.value = "";
+  }
 
-      <div style={{ width: 68, background: "#16233A", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, gap: 8 }}>
+  return (
+    <div className="erm-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+        @media (max-width: 768px) {
+          .erm-shell { flex-direction: column !important; }
+          .erm-sidebar { width: 100% !important; flex-direction: row !important; padding: 10px 16px !important; justify-content: space-between; }
+          .erm-sidebar > div[style*="flex: 1"] { display: none !important; }
+          .erm-main { padding: 16px !important; }
+          .erm-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .erm-heatmap-row { grid-template-columns: 1fr !important; }
+          .erm-filter-bar { flex-direction: column !important; }
+          .erm-filter-bar > select { width: 100% !important; }
+          .erm-header { flex-direction: column !important; align-items: flex-start !important; gap: 12px; }
+          .erm-header-actions { width: 100%; flex-wrap: wrap; }
+        }
+      `}</style>
+
+      <div className="erm-sidebar" style={{ width: 68, background: "#16233A", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, gap: 8 }}>
         <Shield size={22} color="#F5F6F5" style={{ marginBottom: 16 }} />
         <SideBtn active={view === "dashboard"} onClick={() => setView("dashboard")} icon={<LayoutGrid size={18} />} />
         <SideBtn active={view === "register"} onClick={() => setView("register")} icon={<ListChecks size={18} />} />
@@ -353,8 +393,8 @@ function Dashboard({ session, profile, theme, setTheme }) {
         </button>
       </div>
 
-      <div style={{ flex: 1, padding: "24px 32px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
+      <div className="erm-main" style={{ flex: 1, padding: "24px 32px", minWidth: 0 }}>
+        <div className="erm-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
           <div>
             <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)" }}>
               Meridian Holdings · {profile?.full_name || session.user.email} · {role}
@@ -363,31 +403,46 @@ function Dashboard({ session, profile, theme, setTheme }) {
               {view === "dashboard" ? "Enterprise risk exposure" : view === "register" ? "Risk register" : view === "admin" ? "User administration" : "Account security"}
             </h1>
           </div>
-          {view === "dashboard" && (
-            <button onClick={handleExecutivePdf} disabled={generatingPdf} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", marginRight: canCreate ? 8 : 0, display: "flex", alignItems: "center", gap: 6 }}>
-              <FileText size={14} /> {generatingPdf ? "Generating..." : "Executive PDF"}
-            </button>
-          )}
-          {view === "register" && (
-            <div style={{ display: "flex", gap: 8, marginRight: canCreate ? 8 : 0 }}>
-              <button onClick={() => exportRisksToCSV(filtered)} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
-                <Download size={14} /> CSV
+          <div className="erm-header-actions" style={{ display: "flex", gap: 8 }}>
+            {view === "dashboard" && (
+              <button onClick={handleExecutivePdf} disabled={generatingPdf} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
+                <FileText size={14} /> {generatingPdf ? "Generating..." : "Executive PDF"}
               </button>
-              <button onClick={() => exportRisksToPDF(filtered)} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
-                <FileText size={14} /> PDF
+            )}
+            {view === "register" && (
+              <>
+                {canCreate && (
+                  <>
+                    <input ref={csvInputRef} type="file" accept=".csv" onChange={handleCsvImport} style={{ display: "none" }} />
+                    <button onClick={() => csvInputRef.current?.click()} disabled={importing} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
+                      <Upload size={14} /> {importing ? "Importing..." : "Import CSV"}
+                    </button>
+                  </>
+                )}
+                <button onClick={() => exportRisksToCSV(filtered)} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
+                  <Download size={14} /> CSV
+                </button>
+                <button onClick={() => exportRisksToPDF(filtered)} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
+                  <FileText size={14} /> PDF
+                </button>
+              </>
+            )}
+            {canCreate && (view === "dashboard" || view === "register") && (
+              <button onClick={() => setDrawerRisk(null)} style={{ ...primaryBtn, flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
+                <Plus size={16} /> New risk
               </button>
-            </div>
-          )}
-          {canCreate && (view === "dashboard" || view === "register") && (
-            <button onClick={() => setDrawerRisk(null)} style={{ ...primaryBtn, flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
-              <Plus size={16} /> New risk
-            </button>
-          )}
+            )}
+          </div>
         </div>
 
         {errorMsg && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#EFD3D0", border: "1px solid #8E2E2E", color: "#5F1E1E", borderRadius: 4, padding: "8px 12px", marginBottom: 16, fontSize: 13 }}>
             <AlertTriangle size={14} /> {errorMsg}
+          </div>
+        )}
+        {importMsg && (
+          <div style={{ background: "#E4EEE8", border: "1px solid #4C7A5E", color: "#2C4E3B", borderRadius: 4, padding: "8px 12px", marginBottom: 16, fontSize: 13 }}>
+            {importMsg}
           </div>
         )}
 
@@ -396,7 +451,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
         ) : view === "dashboard" ? (
           <>
             <div ref={reportRef} style={{ background: "var(--bg)" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+              <div className="erm-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
                 <StatCard label="Open risks" value={openRisks.length} sub={`${risks.length} total logged`} />
                 <StatCard label="Avg. exposure score" value={avgScore} sub="likelihood x impact" />
                 <StatCard label="Critical risks" value={criticalCount} sub="score 15+" />
@@ -407,7 +462,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
                 <TrendChart />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16, alignItems: "start" }}>
+              <div className="erm-heatmap-row" style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16, alignItems: "start" }}>
                 <Heatmap risks={openRisks} onCellClick={setActiveCell} activeCell={activeCell} />
                 <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, padding: 16 }}>
                   <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)", marginBottom: 12 }}>Top 5 exposures</div>
@@ -437,7 +492,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
           </>
         ) : view === "register" ? (
           <>
-            <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+            <div className="erm-filter-bar" style={{ display: "flex", gap: 10, marginBottom: 16 }}>
               <div style={{ position: "relative", flex: 1 }}>
                 <Search size={15} style={{ position: "absolute", left: 10, top: 10, color: "var(--muted)" }} />
                 <input placeholder="Search risks..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, paddingLeft: 32 }} />
