@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
+import Turnstile from "./Turnstile.jsx";
 
 const inputStyle = {
   width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #C9D1D6",
@@ -90,6 +91,8 @@ export default function Auth() {
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
   const [lockedSeconds, setLockedSeconds] = useState(0);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const turnstileRef = useRef(null);
 
   useEffect(() => {
     if (lockedSeconds <= 0) return;
@@ -118,8 +121,17 @@ export default function Auth() {
         setBusy(false);
         return;
       }
+      if (!captchaToken) {
+        setError("Please complete the verification challenge.");
+        setBusy(false);
+        return;
+      }
 
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({
+        email, password, options: { captchaToken },
+      });
+      turnstileRef.current?.reset();
+      setCaptchaToken("");
       if (error) {
         const result = registerFailedAttempt(email);
         if (result.locked) {
@@ -133,10 +145,17 @@ export default function Auth() {
       }
       clearAttempts(email);
     } else {
+      if (!captchaToken) {
+        setError("Please complete the verification challenge.");
+        setBusy(false);
+        return;
+      }
       const { error } = await supabase.auth.signUp({
         email, password,
-        options: { data: { full_name: fullName } },
+        options: { data: { full_name: fullName }, captchaToken },
       });
+      turnstileRef.current?.reset();
+      setCaptchaToken("");
       if (error) setError(error.message);
       else setInfo("Account created. Check your email to confirm, then sign in.");
     }
@@ -163,18 +182,24 @@ export default function Auth() {
         />
         {mode === "signup" && <StrengthMeter password={password} />}
 
+        <Turnstile
+          ref={turnstileRef}
+          siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
+          onVerify={setCaptchaToken}
+        />
+
         {error && <div style={{ color: "#8E2E2E", fontSize: 12, marginBottom: 10 }}>{error}</div>}
         {info && <div style={{ color: "#2C4E3B", fontSize: 12, marginBottom: 10 }}>{info}</div>}
         {lockedSeconds > 0 && (
           <div style={{ color: "#8E2E2E", fontSize: 12, marginBottom: 10 }}>Try again in {lockedSeconds}s</div>
         )}
 
-        <button type="submit" disabled={busy || signupBlocked || lockedSeconds > 0} style={{
+        <button type="submit" disabled={busy || signupBlocked || lockedSeconds > 0 || !captchaToken} style={{
           width: "100%", padding: "10px 16px",
-          background: (busy || signupBlocked || lockedSeconds > 0) ? "#8B98A6" : "#16233A",
+          background: (busy || signupBlocked || lockedSeconds > 0 || !captchaToken) ? "#8B98A6" : "#16233A",
           color: "#F5F6F5", border: "none",
           borderRadius: 4, fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600, fontSize: 13,
-          cursor: (busy || signupBlocked || lockedSeconds > 0) ? "not-allowed" : "pointer",
+          cursor: (busy || signupBlocked || lockedSeconds > 0 || !captchaToken) ? "not-allowed" : "pointer",
         }}>
           {busy ? "Please wait..." : lockedSeconds > 0 ? `Locked (${lockedSeconds}s)` : mode === "signin" ? "Sign in" : "Sign up"}
         </button>
