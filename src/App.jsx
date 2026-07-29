@@ -8,7 +8,7 @@ import MFAEnroll from "./MFAEnroll.jsx";
 import MFAChallenge from "./MFAChallenge.jsx";
 import { exportExecutivePDF } from "./executiveReport.js";
 import { exportRisksToCSV, exportRisksToPDF } from "./exportUtils.js";
-import { parseRisksCSV } from "./importUtils.js";
+import { parseRisksCSV, downloadCSVTemplate } from "./importUtils.js";
 import { CATEGORIES, STATUSES, scoreOf, bandOf, RAMP } from "./riskLogic.js";
 
 // ---------------------------------------------------------------------------
@@ -343,13 +343,17 @@ function Dashboard({ session, profile, theme, setTheme }) {
     setImportMsg("");
     try {
       const { rows, errors } = await parseRisksCSV(file);
-      const validRows = rows.filter((_, i) => !errors.some(err => err.startsWith(`Row ${i + 2}:`)));
-      const payload = validRows.map(r => toDb(r, session, profile));
+      const errorRowNums = new Set(errors.map(err => Number(err.match(/^Row (\d+):/)?.[1])));
+      const validRows = rows.filter(r => !errorRowNums.has(r._rowNum));
+      const payload = validRows.map(({ _rowNum, ...r }) => toDb(r, session, profile));
       if (payload.length > 0) {
         const { error } = await supabase.from("risks").upsert(payload);
         if (error) { setErrorMsg(error.message); setImporting(false); return; }
       }
-      setImportMsg(`Imported ${payload.length} risk(s).${errors.length ? ` Skipped ${errors.length} row(s): ${errors.slice(0, 3).join("; ")}${errors.length > 3 ? "..." : ""}` : ""}`);
+      const errorSummary = errors.length
+        ? ` Skipped ${errorRowNums.size} row(s): ${errors.slice(0, 3).join("; ")}${errors.length > 3 ? ` (+${errors.length - 3} more)` : ""}`
+        : "";
+      setImportMsg(`Imported ${payload.length} risk(s).${errorSummary}`);
       loadRisks();
     } catch (err) {
       setErrorMsg("Failed to parse CSV: " + err.message);
@@ -414,6 +418,9 @@ function Dashboard({ session, profile, theme, setTheme }) {
                 {canCreate && (
                   <>
                     <input ref={csvInputRef} type="file" accept=".csv" onChange={handleCsvImport} style={{ display: "none" }} />
+                    <button onClick={downloadCSVTemplate} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
+                      <FileText size={14} /> Template
+                    </button>
                     <button onClick={() => csvInputRef.current?.click()} disabled={importing} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
                       <Upload size={14} /> {importing ? "Importing..." : "Import CSV"}
                     </button>
