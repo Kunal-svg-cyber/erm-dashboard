@@ -9,6 +9,7 @@ import MFAChallenge from "./MFAChallenge.jsx";
 import { exportExecutivePDF } from "./executiveReport.js";
 import { exportRisksToCSV, exportRisksToPDF } from "./exportUtils.js";
 import { parseRisksCSV, downloadCSVTemplate } from "./importUtils.js";
+import { parseRisksPDF } from "./pdfImportUtils.js";
 import { CATEGORIES, STATUSES, scoreOf, bandOf, RAMP } from "./riskLogic.js";
 
 // ---------------------------------------------------------------------------
@@ -277,6 +278,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
   const reportRef = useRef(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const csvInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
 
@@ -336,6 +338,21 @@ function Dashboard({ session, profile, theme, setTheme }) {
     }
   }
 
+  async function applyImportedRows(rows, errors) {
+    const errorRowNums = new Set(errors.map(err => Number(err.match(/^Row (\d+):/)?.[1])));
+    const validRows = rows.filter(r => !errorRowNums.has(r._rowNum));
+    const payload = validRows.map(({ _rowNum, ...r }) => toDb(r, session, profile));
+    if (payload.length > 0) {
+      const { error } = await supabase.from("risks").upsert(payload);
+      if (error) { setErrorMsg(error.message); return; }
+    }
+    const errorSummary = errors.length
+      ? ` Skipped ${errorRowNums.size} row(s): ${errors.slice(0, 3).join("; ")}${errors.length > 3 ? ` (+${errors.length - 3} more)` : ""}`
+      : "";
+    setImportMsg(`Imported ${payload.length} risk(s).${errorSummary}`);
+    loadRisks();
+  }
+
   async function handleCsvImport(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -343,20 +360,24 @@ function Dashboard({ session, profile, theme, setTheme }) {
     setImportMsg("");
     try {
       const { rows, errors } = await parseRisksCSV(file);
-      const errorRowNums = new Set(errors.map(err => Number(err.match(/^Row (\d+):/)?.[1])));
-      const validRows = rows.filter(r => !errorRowNums.has(r._rowNum));
-      const payload = validRows.map(({ _rowNum, ...r }) => toDb(r, session, profile));
-      if (payload.length > 0) {
-        const { error } = await supabase.from("risks").upsert(payload);
-        if (error) { setErrorMsg(error.message); setImporting(false); return; }
-      }
-      const errorSummary = errors.length
-        ? ` Skipped ${errorRowNums.size} row(s): ${errors.slice(0, 3).join("; ")}${errors.length > 3 ? ` (+${errors.length - 3} more)` : ""}`
-        : "";
-      setImportMsg(`Imported ${payload.length} risk(s).${errorSummary}`);
-      loadRisks();
+      await applyImportedRows(rows, errors);
     } catch (err) {
       setErrorMsg("Failed to parse CSV: " + err.message);
+    }
+    setImporting(false);
+    e.target.value = "";
+  }
+
+  async function handlePdfImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportMsg("");
+    try {
+      const { rows, errors } = await parseRisksPDF(file);
+      await applyImportedRows(rows, errors);
+    } catch (err) {
+      setErrorMsg("Failed to read PDF: " + err.message);
     }
     setImporting(false);
     e.target.value = "";
@@ -423,6 +444,10 @@ function Dashboard({ session, profile, theme, setTheme }) {
                     </button>
                     <button onClick={() => csvInputRef.current?.click()} disabled={importing} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
                       <Upload size={14} /> {importing ? "Importing..." : "Import CSV"}
+                    </button>
+                    <input ref={pdfInputRef} type="file" accept=".pdf" onChange={handlePdfImport} style={{ display: "none" }} />
+                    <button onClick={() => pdfInputRef.current?.click()} disabled={importing} style={{ ...dangerBtn, color: "var(--ink)", borderColor: "var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
+                      <Upload size={14} /> {importing ? "Importing..." : "Import PDF"}
                     </button>
                   </>
                 )}
