@@ -1,7 +1,15 @@
 export const CATEGORIES = ["Strategic", "Operational", "Financial", "Compliance", "Cyber", "Reputational"];
 export const STATUSES = ["Open", "Mitigating", "Escalated", "Closed"];
 
-export function scoreOf(r) {
+// "Inherent" = risk before mitigation (likelihood/impact fields).
+// "Residual" = risk after mitigation (residualLikelihood/residualImpact).
+// Falls back to inherent values if residual hasn't been set yet.
+export function scoreOf(r, view = "inherent") {
+  if (view === "residual") {
+    const l = r.residualLikelihood ?? r.likelihood;
+    const i = r.residualImpact ?? r.impact;
+    return l * i;
+  }
   return r.likelihood * r.impact;
 }
 
@@ -10,6 +18,14 @@ export function bandOf(score) {
   if (score >= 10) return { label: "High", ramp: "high" };
   if (score >= 5) return { label: "Medium", ramp: "med" };
   return { label: "Low", ramp: "low" };
+}
+
+// A risk "exceeds appetite" if its score (in the given view) is at or
+// above its category's configured threshold. thresholds is a map of
+// { [category]: appetite_score }, loaded from the category_thresholds table.
+export function exceedsAppetite(r, thresholds, view = "inherent") {
+  const limit = thresholds?.[r.category] ?? 15;
+  return scoreOf(r, view) >= limit;
 }
 
 export const RAMP = {

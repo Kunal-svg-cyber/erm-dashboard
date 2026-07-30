@@ -10,7 +10,7 @@ import { exportExecutivePDF } from "./executiveReport.js";
 import { exportRisksToCSV, exportRisksToPDF } from "./exportUtils.js";
 import { parseRisksCSV, downloadCSVTemplate } from "./importUtils.js";
 import { parseRisksPDF } from "./pdfImportUtils.js";
-import { CATEGORIES, STATUSES, scoreOf, bandOf, RAMP } from "./riskLogic.js";
+import { CATEGORIES, STATUSES, scoreOf, bandOf, RAMP, exceedsAppetite } from "./riskLogic.js";
 
 // ---------------------------------------------------------------------------
 // STEP 1: Static config
@@ -25,6 +25,8 @@ function fromDb(row) {
   return {
     id: row.id, title: row.title, description: row.description || "",
     category: row.category, likelihood: row.likelihood, impact: row.impact,
+    residualLikelihood: row.residual_likelihood ?? row.likelihood,
+    residualImpact: row.residual_impact ?? row.impact,
     ownerId: row.owner_id, owner: row.owner_name, status: row.status,
     mitigation: row.mitigation || "", targetDate: row.target_date || "",
     lastReviewed: row.last_reviewed || "",
@@ -34,6 +36,8 @@ function toDb(r, session, profile) {
   return {
     id: r.id, title: r.title, description: r.description, category: r.category,
     likelihood: r.likelihood, impact: r.impact,
+    residual_likelihood: r.residualLikelihood ?? r.likelihood,
+    residual_impact: r.residualImpact ?? r.impact,
     owner_id: r.ownerId || session.user.id,
     owner_name: r.owner || profile?.full_name || session.user.email,
     status: r.status, mitigation: r.mitigation,
@@ -44,7 +48,7 @@ function toDb(r, session, profile) {
 // ---------------------------------------------------------------------------
 // STEP 4: Small building blocks
 // ---------------------------------------------------------------------------
-function ScoreBadge({ score }) {
+function ScoreBadge({ score, exceeds }) {
   const band = bandOf(score);
   const c = RAMP[band.ramp];
   return (
@@ -55,6 +59,7 @@ function ScoreBadge({ score }) {
       fontSize: 12, fontWeight: 600, letterSpacing: "0.02em",
     }}>
       {score.toString().padStart(2, "0")} · {band.label}
+      {exceeds && <span title="Exceeds this category's risk appetite threshold" style={{ marginLeft: 2 }}>⚠</span>}
     </span>
   );
 }
@@ -72,18 +77,24 @@ function StatCard({ label, value, sub }) {
 // ---------------------------------------------------------------------------
 // STEP 5: Heatmap
 // ---------------------------------------------------------------------------
-function Heatmap({ risks, onCellClick, activeCell }) {
+function Heatmap({ risks, onCellClick, activeCell, view = "inherent" }) {
   const grid = useMemo(() => {
     const g = {};
     for (let l = 1; l <= 5; l++) for (let i = 1; i <= 5; i++) g[`${l}-${i}`] = [];
-    risks.forEach(r => g[`${r.likelihood}-${r.impact}`]?.push(r));
+    risks.forEach(r => {
+      const l = view === "residual" ? (r.residualLikelihood ?? r.likelihood) : r.likelihood;
+      const i = view === "residual" ? (r.residualImpact ?? r.impact) : r.impact;
+      g[`${l}-${i}`]?.push(r);
+    });
     return g;
-  }, [risks]);
+  }, [risks, view]);
 
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, padding: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-        <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Likelihood &times; impact</span>
+        <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>
+          Likelihood &times; impact <span style={{ textTransform: "capitalize" }}>({view})</span>
+        </span>
         <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--muted)" }}>appetite frontier —</span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "24px repeat(5, 1fr)", gap: 4 }}>
@@ -137,13 +148,13 @@ function Heatmap({ risks, onCellClick, activeCell }) {
 // ---------------------------------------------------------------------------
 // STEP 6: Risk register table
 // ---------------------------------------------------------------------------
-function RiskTable({ risks, onSelect }) {
+function RiskTable({ risks, onSelect, view = "inherent", thresholds }) {
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, overflowX: "auto" }}>
       <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13 }}>
         <thead>
           <tr style={{ background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
-            {["ID", "Title", "Category", "Score", "Owner", "Status", "Reviewed"].map(h => (
+            {["ID", "Title", "Category", `Score (${view})`, "Owner", "Status", "Reviewed"].map(h => (
               <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 600 }}>{h}</th>
             ))}
           </tr>
@@ -154,7 +165,7 @@ function RiskTable({ risks, onSelect }) {
               <td style={{ padding: "10px 12px", fontFamily: "'IBM Plex Mono', monospace", color: "var(--muted)" }}>{r.id}</td>
               <td style={{ padding: "10px 12px", color: "var(--ink)", maxWidth: 280 }}>{r.title}</td>
               <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{r.category}</td>
-              <td style={{ padding: "10px 12px" }}><ScoreBadge score={scoreOf(r)} /></td>
+              <td style={{ padding: "10px 12px" }}><ScoreBadge score={scoreOf(r, view)} exceeds={exceedsAppetite(r, thresholds, view)} /></td>
               <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{r.owner}</td>
               <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{r.status}</td>
               <td style={{ padding: "10px 12px", color: "var(--muted)", fontFamily: "'IBM Plex Mono', monospace" }}>{r.lastReviewed}</td>
@@ -176,7 +187,8 @@ function RiskTable({ risks, onSelect }) {
 function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
   const [form, setForm] = useState(risk || {
     id: `R-${String(Date.now()).slice(-6)}`, title: "", description: "", category: CATEGORIES[0],
-    likelihood: 3, impact: 3, owner: "", status: "Open", mitigation: "", targetDate: "",
+    likelihood: 3, impact: 3, residualLikelihood: 3, residualImpact: 3,
+    owner: "", status: "Open", mitigation: "", targetDate: "",
     lastReviewed: new Date().toISOString().slice(0, 10),
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -209,15 +221,36 @@ function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Field label={`Likelihood (${form.likelihood})`}>
+            <Field label={`Inherent Likelihood (${form.likelihood})`}>
               <input type="range" min={1} max={5} value={form.likelihood} onChange={e => set("likelihood", Number(e.target.value))} style={{ width: "100%" }} />
             </Field>
-            <Field label={`Impact (${form.impact})`}>
+            <Field label={`Inherent Impact (${form.impact})`}>
               <input type="range" min={1} max={5} value={form.impact} onChange={e => set("impact", Number(e.target.value))} style={{ width: "100%" }} />
             </Field>
           </div>
 
-          <div style={{ margin: "8px 0 16px" }}><ScoreBadge score={form.likelihood * form.impact} /></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label={`Residual Likelihood (${form.residualLikelihood ?? form.likelihood})`}>
+              <input type="range" min={1} max={5} value={form.residualLikelihood ?? form.likelihood} onChange={e => set("residualLikelihood", Number(e.target.value))} style={{ width: "100%" }} />
+            </Field>
+            <Field label={`Residual Impact (${form.residualImpact ?? form.impact})`}>
+              <input type="range" min={1} max={5} value={form.residualImpact ?? form.impact} onChange={e => set("residualImpact", Number(e.target.value))} style={{ width: "100%" }} />
+            </Field>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: -8, marginBottom: 12 }}>
+            Residual = risk level after mitigation is applied. Defaults to match inherent until adjusted.
+          </div>
+
+          <div style={{ margin: "8px 0 16px", display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)", marginBottom: 4 }}>Inherent</div>
+              <ScoreBadge score={form.likelihood * form.impact} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)", marginBottom: 4 }}>Residual</div>
+              <ScoreBadge score={(form.residualLikelihood ?? form.likelihood) * (form.residualImpact ?? form.impact)} />
+            </div>
+          </div>
 
           <Field label="Owner"><input style={inputStyle} value={form.owner} onChange={e => set("owner", e.target.value)} /></Field>
           <Field label="Mitigation plan"><textarea style={{ ...inputStyle, height: 60 }} value={form.mitigation} onChange={e => set("mitigation", e.target.value)} /></Field>
@@ -281,12 +314,23 @@ function Dashboard({ session, profile, theme, setTheme }) {
   const pdfInputRef = useRef(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
+  const [riskView, setRiskView] = useState("inherent"); // inherent | residual
+  const [thresholds, setThresholds] = useState({});
 
   const role = profile?.role || "owner";
   const canCreate = role === "admin" || role === "owner";
   const canEdit = (r) => role === "admin" || r.ownerId === session.user.id;
 
-  useEffect(() => { loadRisks(); }, []);
+  useEffect(() => { loadRisks(); loadThresholds(); }, []);
+
+  async function loadThresholds() {
+    const { data } = await supabase.from("category_thresholds").select("*");
+    if (data) {
+      const map = {};
+      data.forEach(row => { map[row.category] = row.appetite_score; });
+      setThresholds(map);
+    }
+  }
 
   async function loadRisks() {
     setLoading(true);
@@ -301,14 +345,20 @@ function Dashboard({ session, profile, theme, setTheme }) {
       .filter(r => catFilter === "All" || r.category === catFilter)
       .filter(r => statusFilter === "All" || r.status === statusFilter)
       .filter(r => r.title.toLowerCase().includes(search.toLowerCase()))
-      .filter(r => !activeCell || `${r.likelihood}-${r.impact}` === activeCell)
-      .sort((a, b) => scoreOf(b) - scoreOf(a));
-  }, [risks, catFilter, statusFilter, search, activeCell]);
+      .filter(r => {
+        if (!activeCell) return true;
+        const l = riskView === "residual" ? (r.residualLikelihood ?? r.likelihood) : r.likelihood;
+        const i = riskView === "residual" ? (r.residualImpact ?? r.impact) : r.impact;
+        return `${l}-${i}` === activeCell;
+      })
+      .sort((a, b) => scoreOf(b, riskView) - scoreOf(a, riskView));
+  }, [risks, catFilter, statusFilter, search, activeCell, riskView]);
 
   const openRisks = risks.filter(r => r.status !== "Closed");
-  const avgScore = Math.round(openRisks.reduce((s, r) => s + scoreOf(r), 0) / (openRisks.length || 1));
-  const criticalCount = openRisks.filter(r => bandOf(scoreOf(r)).label === "Critical").length;
-  const topRisks = [...openRisks].sort((a, b) => scoreOf(b) - scoreOf(a)).slice(0, 5);
+  const avgScore = Math.round(openRisks.reduce((s, r) => s + scoreOf(r, riskView), 0) / (openRisks.length || 1));
+  const criticalCount = openRisks.filter(r => bandOf(scoreOf(r, riskView)).label === "Critical").length;
+  const appetiteBreaches = openRisks.filter(r => exceedsAppetite(r, thresholds, riskView)).length;
+  const topRisks = [...openRisks].sort((a, b) => scoreOf(b, riskView) - scoreOf(a, riskView)).slice(0, 5);
 
   async function saveRisk(r) {
     const payload = toDb(r, session, profile);
@@ -483,10 +533,27 @@ function Dashboard({ session, profile, theme, setTheme }) {
         ) : view === "dashboard" ? (
           <>
             <div ref={reportRef} style={{ background: "var(--bg)" }}>
-              <div className="erm-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ display: "flex", gap: 4, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, padding: 3 }}>
+                  {["inherent", "residual"].map(v => (
+                    <button key={v} onClick={() => setRiskView(v)} style={{
+                      padding: "6px 14px", borderRadius: 4, border: "none", cursor: "pointer",
+                      fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, fontWeight: 600, textTransform: "capitalize",
+                      background: riskView === v ? "var(--ink)" : "transparent",
+                      color: riskView === v ? "var(--bg)" : "var(--muted)",
+                    }}>{v}</button>
+                  ))}
+                </div>
+                <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, color: "var(--muted)" }}>
+                  {riskView === "inherent" ? "Risk before mitigation" : "Risk after mitigation is applied"}
+                </div>
+              </div>
+
+              <div className="erm-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
                 <StatCard label="Open risks" value={openRisks.length} sub={`${risks.length} total logged`} />
-                <StatCard label="Avg. exposure score" value={avgScore} sub="likelihood x impact" />
+                <StatCard label={`Avg. score (${riskView})`} value={avgScore} sub="likelihood x impact" />
                 <StatCard label="Critical risks" value={criticalCount} sub="score 15+" />
+                <StatCard label="Appetite breaches" value={appetiteBreaches} sub="exceeds category threshold" />
                 <StatCard label="Categories tracked" value={CATEGORIES.length} />
               </div>
 
@@ -495,7 +562,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
               </div>
 
               <div className="erm-heatmap-row" style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16, alignItems: "start" }}>
-                <Heatmap risks={openRisks} onCellClick={setActiveCell} activeCell={activeCell} />
+                <Heatmap risks={openRisks} onCellClick={setActiveCell} activeCell={activeCell} view={riskView} />
                 <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, padding: 16 }}>
                   <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)", marginBottom: 12 }}>Top 5 exposures</div>
                   {topRisks.map(r => (
@@ -504,7 +571,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
                         <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13, color: "var(--ink)" }}>{r.title}</div>
                         <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, color: "var(--muted)" }}>{r.owner} · {r.category}</div>
                       </div>
-                      <ScoreBadge score={scoreOf(r)} />
+                      <ScoreBadge score={scoreOf(r, riskView)} exceeds={exceedsAppetite(r, thresholds, riskView)} />
                     </div>
                   ))}
                   {topRisks.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>No open risks yet.</div>}
@@ -518,7 +585,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
                   <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, color: "var(--muted)" }}>Filtered to heatmap cell {activeCell}</span>
                   <button onClick={() => setActiveCell(null)} style={{ background: "none", border: "none", color: "var(--ink)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Clear</button>
                 </div>
-                <RiskTable risks={filtered} onSelect={setDrawerRisk} />
+                <RiskTable risks={filtered} onSelect={setDrawerRisk} view={riskView} thresholds={thresholds} />
               </div>
             )}
           </>
@@ -536,7 +603,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
                 <option>All</option>{STATUSES.map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
-            <RiskTable risks={filtered} onSelect={setDrawerRisk} />
+            <RiskTable risks={filtered} onSelect={setDrawerRisk} view={riskView} thresholds={thresholds} />
           </>
         ) : view === "admin" ? (
           <AdminPanel currentUserId={session.user.id} />

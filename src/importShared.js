@@ -7,6 +7,8 @@ export const HEADER_ALIASES = {
   category: "category", risktype: "category", type: "category",
   likelihood: "likelihood", probability: "likelihood",
   impact: "impact", severity: "impact",
+  residuallikelihood: "residualLikelihood", residualprobability: "residualLikelihood",
+  residualimpact: "residualImpact", residualseverity: "residualImpact",
   score: "score", riskscore: "score", // accepted but ignored — always recalculated
   owner: "owner", riskowner: "owner", assignedto: "owner", assignee: "owner",
   status: "status",
@@ -68,12 +70,18 @@ export function fieldsToRisk(fields, rowNum, seenIds) {
   if (!id || seenIds.has(id)) id = `R-${Date.now()}-${rowNum}`;
   seenIds.add(id);
 
+  const residualLikelihoodRaw = Math.round(Number(fields.residualLikelihood));
+  const residualImpactRaw = Math.round(Number(fields.residualImpact));
+  const residualLikelihood = (!isNaN(residualLikelihoodRaw) && residualLikelihoodRaw >= 1 && residualLikelihoodRaw <= 5) ? residualLikelihoodRaw : (isNaN(likelihood) ? 3 : Math.min(5, Math.max(1, likelihood)));
+  const residualImpact = (!isNaN(residualImpactRaw) && residualImpactRaw >= 1 && residualImpactRaw <= 5) ? residualImpactRaw : (isNaN(impact) ? 3 : Math.min(5, Math.max(1, impact)));
+
   const risk = {
     id, title,
     description: fields.description || "",
     category,
     likelihood: isNaN(likelihood) ? 3 : Math.min(5, Math.max(1, likelihood)),
     impact: isNaN(impact) ? 3 : Math.min(5, Math.max(1, impact)),
+    residualLikelihood, residualImpact,
     owner: fields.owner || "",
     status,
     mitigation: fields.mitigation || "",
