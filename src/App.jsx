@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { AlertTriangle, Shield, ShieldCheck, Plus, X, Search, LayoutGrid, ListChecks, LogOut, Users, Download, Upload, FileText, Moon, Sun } from "lucide-react";
+import { AlertTriangle, Shield, ShieldCheck, Plus, X, Search, LayoutGrid, ListChecks, LogOut, Users, Download, Upload, FileText, Moon, Sun, Sparkles, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import Auth from "./Auth.jsx";
 import AdminPanel from "./AdminPanel.jsx";
 import TrendChart from "./TrendChart.jsx";
 import MFAEnroll from "./MFAEnroll.jsx";
 import MFAChallenge from "./MFAChallenge.jsx";
+import Athena from "./Athena.jsx";
+import StressTest from "./StressTest.jsx";
 import { exportExecutivePDF } from "./executiveReport.js";
 import { exportRisksToCSV, exportRisksToPDF } from "./exportUtils.js";
 import { parseRisksCSV, downloadCSVTemplate } from "./importUtils.js";
@@ -459,6 +461,8 @@ function Dashboard({ session, profile, theme, setTheme }) {
           <SideBtn active={view === "admin"} onClick={() => setView("admin")} icon={<Users size={18} />} />
         )}
         <SideBtn active={view === "security"} onClick={() => setView("security")} icon={<ShieldCheck size={18} />} />
+        <SideBtn active={view === "athena"} onClick={() => setView("athena")} icon={<Sparkles size={18} />} />
+        <SideBtn active={view === "stress"} onClick={() => setView("stress")} icon={<Zap size={18} />} />
         <div style={{ flex: 1 }} />
         <button onClick={() => setTheme(t => t === "light" ? "dark" : "light")} title="Toggle dark mode" style={{ width: 40, height: 40, marginBottom: 4, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
           {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
@@ -475,7 +479,12 @@ function Dashboard({ session, profile, theme, setTheme }) {
               Meridian Holdings · {profile?.full_name || session.user.email} · {role}
             </div>
             <h1 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 32, fontWeight: 700, color: "var(--ink)", margin: "2px 0 0" }}>
-              {view === "dashboard" ? "Enterprise risk exposure" : view === "register" ? "Risk register" : view === "admin" ? "User administration" : "Account security"}
+              {view === "dashboard" ? "Enterprise risk exposure"
+                : view === "register" ? "Risk register"
+                : view === "admin" ? "User administration"
+                : view === "athena" ? "Athena — risk assistant"
+                : view === "stress" ? "Stress testing"
+                : "Account security"}
             </h1>
           </div>
           <div className="erm-header-actions" style={{ display: "flex", gap: 8 }}>
@@ -607,6 +616,10 @@ function Dashboard({ session, profile, theme, setTheme }) {
           </>
         ) : view === "admin" ? (
           <AdminPanel currentUserId={session.user.id} />
+        ) : view === "athena" ? (
+          <Athena />
+        ) : view === "stress" ? (
+          <StressTest risks={openRisks} thresholds={thresholds} />
         ) : (
           <MFAEnroll />
         )}
