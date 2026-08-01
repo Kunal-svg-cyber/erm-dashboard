@@ -49,6 +49,7 @@ describe.skipIf(!hasAllCreds)("Row-Level Security (live database)", () => {
   });
 
   afterAll(async () => {
+    if (!adminClient) return; // beforeAll failed before this was set — nothing to clean up
     await adminClient.from("risks").delete().eq("id", TEST_RISK_ID);
   });
 
