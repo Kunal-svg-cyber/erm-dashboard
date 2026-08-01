@@ -71,7 +71,7 @@ export default function MFAEnroll() {
         </div>
       ) : enrolling ? (
         <div>
-          <div style={{ background: "#F5F6F5", padding: 12, borderRadius: 4, marginBottom: 12 }} dangerouslySetInnerHTML={{ __html: qr }} />
+          <div style={{ background: "#FFFFFF", border: "1px solid var(--border)", padding: 12, borderRadius: 6, marginBottom: 12, display: "inline-block" }} dangerouslySetInnerHTML={{ __html: qr }} />
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Scan this with your authenticator app, then enter the 6-digit code:</div>
           <input
             value={code} onChange={e => setCode(e.target.value)} maxLength={6} placeholder="123456"

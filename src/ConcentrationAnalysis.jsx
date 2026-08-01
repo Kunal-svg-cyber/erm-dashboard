@@ -32,7 +32,7 @@ function ConcentrationBar({ title, groups, totalScore }) {
               </span>
             </div>
             <div style={{ height: 6, background: "var(--bg)", borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${pct * 100}%`, background: breach ? "#B0492E" : "#16233A", borderRadius: 3 }} />
+              <div style={{ height: "100%", width: `${pct * 100}%`, background: breach ? "#B0492E" : "var(--ink)", borderRadius: 3 }} />
             </div>
           </div>
         );

@@ -120,8 +120,8 @@ export default function MonteCarlo({ risks }) {
                 <CartesianGrid stroke="var(--row-border)" vertical={false} />
                 <XAxis dataKey="range" tick={{ fontSize: 10, fill: "var(--muted)" }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ fontFamily: "IBM Plex Sans", fontSize: 12 }} />
-                <Bar dataKey="count" fill="#16233A" radius={[2, 2, 0, 0]} />
+                <Tooltip contentStyle={{ fontFamily: "IBM Plex Sans", fontSize: 12, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--ink)" }} labelStyle={{ color: "var(--ink)" }} itemStyle={{ color: "var(--ink)" }} />
+                <Bar dataKey="count" fill="var(--ink)" radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
