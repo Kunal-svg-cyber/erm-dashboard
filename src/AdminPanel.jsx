@@ -74,6 +74,82 @@ function ThresholdEditor() {
   );
 }
 
+function ApprovalQueue() {
+  const [approvals, setApprovals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [decidingId, setDecidingId] = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("risk_approvals")
+      .select("*, risks(title, category)")
+      .eq("decision", "pending")
+      .order("created_at", { ascending: false });
+    if (error) setErrorMsg(error.message);
+    else setApprovals(data || []);
+    setLoading(false);
+  }
+
+  async function decide(approval, decision) {
+    setDecidingId(approval.id);
+    setErrorMsg("");
+
+    if (decision === "approved") {
+      const { error: updateErr } = await supabase.from("risks").update(approval.requested_change).eq("id", approval.risk_id);
+      if (updateErr) { setErrorMsg(updateErr.message); setDecidingId(null); return; }
+    }
+
+    const { error } = await supabase.from("risk_approvals")
+      .update({ decision, decided_at: new Date().toISOString() })
+      .eq("id", approval.id);
+    if (error) setErrorMsg(error.message);
+    else setApprovals(prev => prev.filter(a => a.id !== approval.id));
+    setDecidingId(null);
+  }
+
+  return (
+    <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden", marginTop: 16 }}>
+      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>
+          Pending approvals
+        </div>
+        <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+          Owners can't close or downgrade a Critical risk unilaterally — changes queue here for admin sign-off.
+        </div>
+      </div>
+      {errorMsg && <div style={{ background: "#EFD3D0", color: "#5F1E1E", fontSize: 13, padding: "8px 16px" }}>{errorMsg}</div>}
+      {loading ? (
+        <div style={{ padding: 24, color: "var(--muted)", fontFamily: "'IBM Plex Sans', sans-serif" }}>Loading...</div>
+      ) : approvals.length === 0 ? (
+        <div style={{ padding: 24, color: "var(--muted)", fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif" }}>Nothing pending.</div>
+      ) : approvals.map(a => (
+        <div key={a.id} style={{ padding: "12px 16px", borderBottom: "1px solid var(--row-border)" }}>
+          <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13, color: "var(--ink)", marginBottom: 4 }}>
+            {a.risks?.title || a.risk_id} <span style={{ color: "var(--muted)" }}>· {a.risks?.category}</span>
+          </div>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: "var(--muted)", marginBottom: 10 }}>
+            {a.current_snapshot.status} (L{a.current_snapshot.likelihood} I{a.current_snapshot.impact}) → {a.requested_change.status} (L{a.requested_change.likelihood} I{a.requested_change.impact})
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => decide(a, "approved")} disabled={decidingId === a.id} style={{
+              padding: "6px 12px", background: "#16233A", color: "#F5F6F5", border: "none", borderRadius: 4,
+              fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, fontWeight: 600, cursor: "pointer",
+            }}>Approve</button>
+            <button onClick={() => decide(a, "rejected")} disabled={decidingId === a.id} style={{
+              padding: "6px 12px", background: "var(--card)", color: "#8E2E2E", border: "1px solid #8E2E2E", borderRadius: 4,
+              fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12, fontWeight: 600, cursor: "pointer",
+            }}>Reject</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AdminPanel({ currentUserId }) {
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -157,6 +233,7 @@ export default function AdminPanel({ currentUserId }) {
       )}
     </div>
     <ThresholdEditor />
+    <ApprovalQueue />
     </div>
   );
 }

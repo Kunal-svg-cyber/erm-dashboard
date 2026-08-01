@@ -198,9 +198,20 @@ function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const [history, setHistory] = useState([]);
+  const [pendingApproval, setPendingApproval] = useState(null);
+
+  useEffect(() => {
+    if (!risk) return;
+    supabase.from("risk_history").select("*").eq("risk_id", risk.id).order("changed_at", { ascending: false }).limit(10)
+      .then(({ data }) => setHistory(data || []));
+    supabase.from("risk_approvals").select("*").eq("risk_id", risk.id).eq("decision", "pending").limit(1)
+      .then(({ data }) => setPendingApproval(data?.[0] || null));
+  }, [risk?.id]);
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(22,35,58,0.35)", display: "flex", justifyContent: "flex-end", zIndex: 50 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 420, background: "#F5F6F5", height: "100%", padding: 24, overflowY: "auto", borderLeft: "1px solid var(--border)" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 420, background: "var(--bg)", height: "100%", padding: 24, overflowY: "auto", borderLeft: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <h2 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 24, fontWeight: 700, color: "var(--ink)", margin: 0 }}>
             {risk ? (readOnly ? "View risk" : "Edit risk") : "New risk"}
@@ -262,6 +273,12 @@ function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
           <Field label="Target date"><input type="date" style={inputStyle} value={form.targetDate} onChange={e => set("targetDate", e.target.value)} /></Field>
         </fieldset>
 
+        {pendingApproval && (
+          <div style={{ marginTop: 4, marginBottom: 16, background: "#F5EAD4", border: "1px solid #C68A2E", borderRadius: 4, padding: "8px 12px", fontSize: 12, color: "#7A5620" }}>
+            A change to this Critical risk is awaiting admin approval — requested {new Date(pendingApproval.created_at).toLocaleDateString()}.
+          </div>
+        )}
+
         {!readOnly && (
           <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
             <button onClick={() => onSave(form)} style={primaryBtn}>Save risk</button>
@@ -271,6 +288,20 @@ function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
         {readOnly && (
           <div style={{ marginTop: 16, fontSize: 12, color: "var(--muted)" }}>
             You don't have permission to edit this risk.
+          </div>
+        )}
+
+        {history.length > 0 && (
+          <div style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", marginBottom: 10 }}>History</div>
+            {history.map(h => (
+              <div key={h.id} style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, lineHeight: 1.5 }}>
+                <span style={{ color: "var(--ink)" }}>{h.changed_by_name || "Someone"}</span>{" "}
+                {h.old_status !== h.new_status && <>changed status <strong>{h.old_status} → {h.new_status}</strong>{" "}</>}
+                {h.old_score !== h.new_score && <>score <strong>{h.old_score} → {h.new_score}</strong>{" "}</>}
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>· {new Date(h.changed_at).toLocaleDateString()}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -377,6 +408,25 @@ function Dashboard({ session, profile, theme, setTheme }) {
   const topRisks = [...openRisks].sort((a, b) => scoreOf(b, riskView) - scoreOf(a, riskView)).slice(0, 5);
 
   async function saveRisk(r) {
+    const original = risks.find(x => x.id === r.id);
+    const isCriticalNow = original && bandOf(scoreOf(original)).label === "Critical";
+    const willDowngrade = isCriticalNow && (
+      r.status === "Closed" || bandOf(r.likelihood * r.impact).label !== "Critical"
+    );
+
+    if (isCriticalNow && willDowngrade && role !== "admin") {
+      const { error } = await supabase.from("risk_approvals").insert({
+        risk_id: r.id,
+        requested_by: session.user.id,
+        requested_change: { status: r.status, likelihood: r.likelihood, impact: r.impact },
+        current_snapshot: { status: original.status, likelihood: original.likelihood, impact: original.impact },
+      });
+      if (error) { setErrorMsg(error.message); return; }
+      setImportMsg("This risk is Critical — your change was submitted for admin approval instead of applied directly.");
+      setDrawerRisk(undefined);
+      return;
+    }
+
     const payload = toDb(r, session, profile);
     const { error } = await supabase.from("risks").upsert(payload);
     if (error) { setErrorMsg(error.message); return; }
