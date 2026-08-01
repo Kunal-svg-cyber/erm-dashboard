@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@sentry/react": "^8.9.2",
     "@supabase/supabase-js": "^2.45.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.2",
@@ -21,6 +23,7 @@
     "recharts": "^2.12.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.45.0",
     "@vitejs/plugin-react": "^4.2.1",
     "vite": "^5.2.0",
     "vitest": "^1.6.0"
