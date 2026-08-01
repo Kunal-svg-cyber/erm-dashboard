@@ -29,8 +29,12 @@ export default function Athena() {
     setInput("");
     setBusy(true);
 
+    const history = messages
+      .filter(m => m !== messages[0]) // exclude the static greeting
+      .map(m => ({ role: m.role, text: m.text }));
+
     const { data, error: fnError } = await supabase.functions.invoke("athena-assistant", {
-      body: { question },
+      body: { question, history },
     });
 
     setBusy(false);

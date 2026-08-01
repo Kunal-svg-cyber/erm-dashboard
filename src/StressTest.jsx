@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
-import { Zap } from "lucide-react";
+import { Zap, Sparkles } from "lucide-react";
+import { supabase } from "./supabaseClient.js";
 import { CATEGORIES, scoreOf, bandOf, exceedsAppetite } from "./riskLogic.js";
 import { SCENARIOS, applyStress } from "./stressScenarios.js";
 
@@ -21,6 +22,8 @@ export default function StressTest({ risks, thresholds }) {
   const [scenarioId, setScenarioId] = useState(null);
   const [customDeltas, setCustomDeltas] = useState({});
   const [mode, setMode] = useState("preset"); // preset | custom
+  const [narrative, setNarrative] = useState("");
+  const [generatingNarrative, setGeneratingNarrative] = useState(false);
 
   const activeDeltas = useMemo(() => {
     if (mode === "custom") return customDeltas;
@@ -51,6 +54,27 @@ export default function StressTest({ risks, thresholds }) {
 
   function setCustomDelta(cat, field, value) {
     setCustomDeltas(prev => ({ ...prev, [cat]: { ...prev[cat], [field]: value } }));
+    setNarrative("");
+  }
+
+  async function generateNarrative() {
+    setGeneratingNarrative(true);
+    setNarrative("");
+    const scenarioName = mode === "preset" ? (SCENARIOS.find(s => s.id === scenarioId)?.name || "Custom scenario") : "Custom scenario";
+    const prompt = `Write a concise (4-6 sentence) executive stress-test narrative for a board risk report.
+Scenario: "${scenarioName}".
+Baseline: avg score ${baseline.avg}, ${baseline.critical} critical risks, ${baseline.breaches} appetite breaches.
+Under stress: avg score ${stressed.avg}, ${stressed.critical} critical risks, ${stressed.breaches} appetite breaches.
+Risks that shift into High/Critical under this scenario: ${flipped.map(f => `${f.before.title} (${f.before.category}, ${scoreOf(f.before)} -> ${scoreOf(f.after)})`).join("; ") || "none"}.
+Write it as a professional risk analyst would, plain prose, no headers or bullet points.`;
+
+    const { data, error } = await supabase.functions.invoke("athena-assistant", { body: { question: prompt } });
+    setGeneratingNarrative(false);
+    if (error || data?.error) {
+      setNarrative("Couldn't generate a narrative right now — " + (error?.message || data?.error));
+      return;
+    }
+    setNarrative(data.answer);
   }
 
   return (
@@ -68,7 +92,7 @@ export default function StressTest({ risks, thresholds }) {
       {mode === "preset" ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10, marginBottom: 20 }}>
           {SCENARIOS.map(s => (
-            <button key={s.id} onClick={() => setScenarioId(s.id === scenarioId ? null : s.id)} style={{
+            <button key={s.id} onClick={() => { setScenarioId(s.id === scenarioId ? null : s.id); setNarrative(""); }} style={{
               textAlign: "left", padding: 14, borderRadius: 6, cursor: "pointer",
               border: scenarioId === s.id ? "1.5px solid var(--ink)" : "1px solid var(--border)",
               background: scenarioId === s.id ? "var(--bg)" : "var(--card)",
@@ -146,6 +170,21 @@ export default function StressTest({ risks, thresholds }) {
                 </div>
               </div>
             ))}
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <button onClick={generateNarrative} disabled={generatingNarrative} style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 6,
+              border: "1px solid var(--border)", background: "var(--card)", color: "var(--ink)",
+              fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>
+              <Sparkles size={14} /> {generatingNarrative ? "Athena is writing..." : "Generate executive narrative"}
+            </button>
+            {narrative && (
+              <div style={{ marginTop: 12, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, padding: 16, fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13.5, color: "var(--ink)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                {narrative}
+              </div>
+            )}
           </div>
         </>
       )}
