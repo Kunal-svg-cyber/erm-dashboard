@@ -468,28 +468,66 @@ function Dashboard({ session, profile, theme, setTheme }) {
           .erm-header { flex-direction: column !important; align-items: flex-start !important; gap: 12px; }
           .erm-header-actions { width: 100%; flex-wrap: wrap; }
         }
+        .erm-tooltip {
+          position: absolute;
+          left: 52px;
+          top: 50%;
+          transform: translateY(-50%) translateX(-6px);
+          background: #16233A;
+          color: #F5F6F5;
+          font-family: 'IBM Plex Sans', sans-serif;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 6px 10px;
+          border-radius: 4px;
+          white-space: nowrap;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 0.15s ease, transform 0.15s ease;
+          z-index: 50;
+        }
+        .erm-tooltip::before {
+          content: "";
+          position: absolute;
+          left: -4px;
+          top: 50%;
+          transform: translateY(-50%);
+          border-width: 4px 4px 4px 0;
+          border-style: solid;
+          border-color: transparent #16233A transparent transparent;
+        }
+        .erm-tooltip-wrap:hover .erm-tooltip {
+          opacity: 1;
+          transform: translateY(-50%) translateX(0);
+        }
       `}</style>
 
       <div className="erm-sidebar" style={{ width: 68, background: "#16233A", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, gap: 8 }}>
         <Shield size={22} color="#F5F6F5" style={{ marginBottom: 16 }} />
-        <SideBtn active={view === "dashboard"} onClick={() => setView("dashboard")} icon={<LayoutGrid size={18} />} />
-        <SideBtn active={view === "register"} onClick={() => setView("register")} icon={<ListChecks size={18} />} />
+        <SideBtn active={view === "dashboard"} onClick={() => setView("dashboard")} icon={<LayoutGrid size={18} />} label="Dashboard" />
+        <SideBtn active={view === "register"} onClick={() => setView("register")} icon={<ListChecks size={18} />} label="Risk Register" />
         {role === "admin" && (
-          <SideBtn active={view === "admin"} onClick={() => setView("admin")} icon={<Users size={18} />} />
+          <SideBtn active={view === "admin"} onClick={() => setView("admin")} icon={<Users size={18} />} label="Admin" />
         )}
-        <SideBtn active={view === "security"} onClick={() => setView("security")} icon={<ShieldCheck size={18} />} />
-        <SideBtn active={view === "athena"} onClick={() => setView("athena")} icon={<Sparkles size={18} />} />
-        <SideBtn active={view === "stress"} onClick={() => setView("stress")} icon={<Zap size={18} />} />
-        <SideBtn active={view === "montecarlo"} onClick={() => setView("montecarlo")} icon={<Activity size={18} />} />
-        <SideBtn active={view === "concentration"} onClick={() => setView("concentration")} icon={<PieChart size={18} />} />
-        <SideBtn active={view === "semanticsearch"} onClick={() => setView("semanticsearch")} icon={<Search size={18} />} />
+        <SideBtn active={view === "security"} onClick={() => setView("security")} icon={<ShieldCheck size={18} />} label="Security" />
+        <SideBtn active={view === "athena"} onClick={() => setView("athena")} icon={<Sparkles size={18} />} label="Athena" />
+        <SideBtn active={view === "stress"} onClick={() => setView("stress")} icon={<Zap size={18} />} label="Stress Test" />
+        <SideBtn active={view === "montecarlo"} onClick={() => setView("montecarlo")} icon={<Activity size={18} />} label="Monte Carlo" />
+        <SideBtn active={view === "concentration"} onClick={() => setView("concentration")} icon={<PieChart size={18} />} label="Concentration" />
+        <SideBtn active={view === "semanticsearch"} onClick={() => setView("semanticsearch")} icon={<Search size={18} />} label="Semantic Search" />
         <div style={{ flex: 1 }} />
-        <button onClick={() => setTheme(t => t === "light" ? "dark" : "light")} title="Toggle dark mode" style={{ width: 40, height: 40, marginBottom: 4, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
-        </button>
-        <button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ width: 40, height: 40, marginBottom: 16, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <LogOut size={18} />
-        </button>
+        <div className="erm-tooltip-wrap" style={{ position: "relative" }}>
+          <button onClick={() => setTheme(t => t === "light" ? "dark" : "light")} style={{ width: 40, height: 40, marginBottom: 4, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
+          <span className="erm-tooltip">{theme === "light" ? "Dark mode" : "Light mode"}</span>
+        </div>
+        <div className="erm-tooltip-wrap" style={{ position: "relative" }}>
+          <button onClick={() => supabase.auth.signOut()} style={{ width: 40, height: 40, marginBottom: 16, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <LogOut size={18} />
+          </button>
+          <span className="erm-tooltip">Sign out</span>
+        </div>
       </div>
 
       <div className="erm-main" style={{ flex: 1, padding: "24px 32px", minWidth: 0 }}>
@@ -673,13 +711,16 @@ function Dashboard({ session, profile, theme, setTheme }) {
   );
 }
 
-function SideBtn({ active, onClick, icon }) {
+function SideBtn({ active, onClick, icon, label }) {
   return (
-    <button onClick={onClick} style={{
-      width: 40, height: 40, borderRadius: 6, border: "none", cursor: "pointer",
-      background: active ? "#2C3E5A" : "transparent", color: active ? "#F5F6F5" : "#8B9AAC",
-      display: "flex", alignItems: "center", justifyContent: "center",
-    }}>{icon}</button>
+    <div className="erm-tooltip-wrap" style={{ position: "relative" }}>
+      <button onClick={onClick} style={{
+        width: 40, height: 40, borderRadius: 6, border: "none", cursor: "pointer",
+        background: active ? "#2C3E5A" : "transparent", color: active ? "#F5F6F5" : "#8B9AAC",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>{icon}</button>
+      {label && <span className="erm-tooltip">{label}</span>}
+    </div>
   );
 }
 
