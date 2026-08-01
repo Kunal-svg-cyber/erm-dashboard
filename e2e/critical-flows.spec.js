@@ -10,7 +10,7 @@ import { test, expect } from "@playwright/test";
 
 test("login page loads and shows the sign-in form", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("Sign in")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await expect(page.getByPlaceholder("Work email")).toBeVisible();
 });
 
