@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { AlertTriangle, Shield, ShieldCheck, Plus, X, Search, LayoutGrid, ListChecks, LogOut, Users, Download, Upload, FileText, Moon, Sun, Sparkles, Zap } from "lucide-react";
+import { AlertTriangle, Shield, ShieldCheck, Plus, X, Search, LayoutGrid, ListChecks, LogOut, Users, Download, Upload, FileText, Moon, Sun, Sparkles, Zap, PieChart, Activity } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import Auth from "./Auth.jsx";
 import AdminPanel from "./AdminPanel.jsx";
@@ -8,6 +8,9 @@ import MFAEnroll from "./MFAEnroll.jsx";
 import MFAChallenge from "./MFAChallenge.jsx";
 import Athena from "./Athena.jsx";
 import StressTest from "./StressTest.jsx";
+import ConcentrationAnalysis from "./ConcentrationAnalysis.jsx";
+import MonteCarlo from "./MonteCarlo.jsx";
+import SemanticSearch from "./SemanticSearch.jsx";
 import { exportExecutivePDF } from "./executiveReport.js";
 import { exportRisksToCSV, exportRisksToPDF } from "./exportUtils.js";
 import { parseRisksCSV, downloadCSVTemplate } from "./importUtils.js";
@@ -325,6 +328,17 @@ function Dashboard({ session, profile, theme, setTheme }) {
 
   useEffect(() => { loadRisks(); loadThresholds(); }, []);
 
+  const [liveConnected, setLiveConnected] = useState(false);
+  useEffect(() => {
+    const channel = supabase
+      .channel("risks-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "risks" }, () => {
+        loadRisks();
+      })
+      .subscribe((status) => setLiveConnected(status === "SUBSCRIBED"));
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   async function loadThresholds() {
     const { data } = await supabase.from("category_thresholds").select("*");
     if (data) {
@@ -366,6 +380,9 @@ function Dashboard({ session, profile, theme, setTheme }) {
     const payload = toDb(r, session, profile);
     const { error } = await supabase.from("risks").upsert(payload);
     if (error) { setErrorMsg(error.message); return; }
+    // Fire-and-forget: keeps the risk searchable by meaning. Doesn't block
+    // the save if it's slow or the embedding function isn't deployed yet.
+    supabase.functions.invoke("embed-risk", { body: { riskId: payload.id } }).catch(() => {});
     setDrawerRisk(undefined);
     loadRisks();
   }
@@ -463,6 +480,9 @@ function Dashboard({ session, profile, theme, setTheme }) {
         <SideBtn active={view === "security"} onClick={() => setView("security")} icon={<ShieldCheck size={18} />} />
         <SideBtn active={view === "athena"} onClick={() => setView("athena")} icon={<Sparkles size={18} />} />
         <SideBtn active={view === "stress"} onClick={() => setView("stress")} icon={<Zap size={18} />} />
+        <SideBtn active={view === "montecarlo"} onClick={() => setView("montecarlo")} icon={<Activity size={18} />} />
+        <SideBtn active={view === "concentration"} onClick={() => setView("concentration")} icon={<PieChart size={18} />} />
+        <SideBtn active={view === "semanticsearch"} onClick={() => setView("semanticsearch")} icon={<Search size={18} />} />
         <div style={{ flex: 1 }} />
         <button onClick={() => setTheme(t => t === "light" ? "dark" : "light")} title="Toggle dark mode" style={{ width: 40, height: 40, marginBottom: 4, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
           {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
@@ -477,6 +497,12 @@ function Dashboard({ session, profile, theme, setTheme }) {
           <div>
             <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)" }}>
               Meridian Holdings · {profile?.full_name || session.user.email} · {role}
+              {liveConnected && (
+                <span style={{ marginLeft: 8, color: "#4C7A5E" }}>
+                  <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#4C7A5E", marginRight: 4 }} />
+                  Live
+                </span>
+              )}
             </div>
             <h1 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 32, fontWeight: 700, color: "var(--ink)", margin: "2px 0 0" }}>
               {view === "dashboard" ? "Enterprise risk exposure"
@@ -484,6 +510,9 @@ function Dashboard({ session, profile, theme, setTheme }) {
                 : view === "admin" ? "User administration"
                 : view === "athena" ? "Athena — risk assistant"
                 : view === "stress" ? "Stress testing"
+                : view === "montecarlo" ? "Monte Carlo simulation"
+                : view === "concentration" ? "Concentration analysis"
+                : view === "semanticsearch" ? "Semantic search"
                 : "Account security"}
             </h1>
           </div>
@@ -620,6 +649,12 @@ function Dashboard({ session, profile, theme, setTheme }) {
           <Athena />
         ) : view === "stress" ? (
           <StressTest risks={openRisks} thresholds={thresholds} />
+        ) : view === "montecarlo" ? (
+          <MonteCarlo risks={openRisks} />
+        ) : view === "concentration" ? (
+          <ConcentrationAnalysis risks={openRisks} />
+        ) : view === "semanticsearch" ? (
+          <SemanticSearch onSelectRisk={(id) => { const r = risks.find(x => x.id === id); if (r) setDrawerRisk(r); }} />
         ) : (
           <MFAEnroll />
         )}
