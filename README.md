@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Kunal-svg-cyber/erm-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Kunal-svg-cyber/erm-dashboard/actions/workflows/ci.yml)
 [![Deployed on Vercel](https://img.shields.io/badge/deployed-vercel-black?logo=vercel)](https://erm-dashboard-six.vercel.app)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-red)](./LICENSE)
 
 A production-grade Enterprise Risk Management system for tracking, scoring, and reporting organizational risk — built with database-enforced access control, two-factor authentication, inherent/residual risk modeling, and automated risk telemetry.
 
@@ -137,3 +137,60 @@ This project has no local build requirement — it's designed to be edited via t
 - All access control is enforced by Postgres RLS policies, not hidden UI buttons — a `viewer` role cannot write to the `risks` table even via a direct API call, and cannot bypass 2FA even if the client-side session state resolves before verification (a real race condition found and fixed during development).
 - The Supabase `service_role` key is only ever used inside the Edge Function (server-side); the frontend uses only the public `anon`/publishable key.
 - `SECURITY DEFINER` functions have explicit `search_path` pinning and restricted execute grants, per Supabase's security linter recommendations.
+
+
+---
+
+## Copyright Notice
+
+© 2026 Kunal-svg-cyber
+
+All Rights Reserved.
+
+This repository contains proprietary software developed exclusively by
+Kunal-svg-cyber.
+
+The source code, architecture, database design, documentation,
+algorithms, UI/UX, reports, and all associated intellectual property are
+protected under applicable copyright laws.
+
+Unauthorized copying, modification, redistribution, commercial use,
+reverse engineering, or creation of derivative works is strictly prohibited
+without prior written permission.
+
+See the [LICENSE](LICENSE) file for complete terms.
+
+---
+
+
+# License
+
+Copyright © 2026 Kunal-svg-cyber
+
+All Rights Reserved.
+
+This repository is proprietary software.
+
+Permission is **NOT** granted to:
+
+- Copy source code
+- Modify source code
+- Redistribute
+- Sell
+- Reproduce
+- Create derivative works
+- Commercial use
+- Reverse engineering
+
+without prior written permission from the copyright owner.
+
+See the LICENSE file for complete legal terms.
+
+# Disclaimer
+
+This software is provided for research, educational,
+and authorized organizational use.
+
+No part of this repository may be copied, redistributed,
+or incorporated into another project without explicit
+written permission from Kunal-svg-cyber.
