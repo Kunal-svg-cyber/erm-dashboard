@@ -2,16 +2,25 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { AlertTriangle, Shield, ShieldCheck, Plus, X, Search, LayoutGrid, ListChecks, LogOut, Users, Download, Upload, FileText, Moon, Sun, Sparkles, Zap, PieChart, Activity } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 import Auth from "./Auth.jsx";
-import AdminPanel from "./AdminPanel.jsx";
+// TrendChart stays eager — it renders on the default Dashboard view, so
+// deferring it would just delay something the user sees immediately.
 import TrendChart from "./TrendChart.jsx";
-import MFAEnroll from "./MFAEnroll.jsx";
-import MFAChallenge from "./MFAChallenge.jsx";
-import Athena from "./Athena.jsx";
-import StressTest from "./StressTest.jsx";
-import ConcentrationAnalysis from "./ConcentrationAnalysis.jsx";
-import MonteCarlo from "./MonteCarlo.jsx";
-import SemanticSearch from "./SemanticSearch.jsx";
-import { exportExecutivePDF } from "./executiveReport.js";
+// Everything below is NOT visible on first load (default view is
+// "dashboard"), so it's deferred into its own chunk and only fetched the
+// moment the user actually navigates to it. This is what keeps the first
+// page load light even though the app itself has grown large.
+const AdminPanel = React.lazy(() => import("./AdminPanel.jsx"));
+const MFAEnroll = React.lazy(() => import("./MFAEnroll.jsx"));
+const MFAChallenge = React.lazy(() => import("./MFAChallenge.jsx"));
+const Athena = React.lazy(() => import("./Athena.jsx"));
+const StressTest = React.lazy(() => import("./StressTest.jsx"));
+const ConcentrationAnalysis = React.lazy(() => import("./ConcentrationAnalysis.jsx"));
+const MonteCarlo = React.lazy(() => import("./MonteCarlo.jsx"));
+const SemanticSearch = React.lazy(() => import("./SemanticSearch.jsx"));
+// jsPDF + html2canvas (the two heaviest single dependencies after pdf.js)
+// are only ever needed at the moment someone clicks "Executive PDF" — so
+// instead of importing the function at the top, it's fetched on demand
+// inside handleExecutivePdf() further down.
 import { exportRisksToCSV, exportRisksToPDF } from "./exportUtils.js";
 import { parseRisksCSV, downloadCSVTemplate } from "./importUtils.js";
 import { parseRisksPDF } from "./pdfImportUtils.js";
@@ -484,6 +493,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
     if (!reportRef.current) return;
     setGeneratingPdf(true);
     try {
+      const { exportExecutivePDF } = await import("./executiveReport.js");
       await exportExecutivePDF(reportRef.current, {
         orgName: "Meridian Holdings",
         stats: { open: openRisks.length, avg: avgScore, critical: criticalCount },
@@ -711,6 +721,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
           </div>
         )}
 
+        <React.Suspense fallback={<div style={{ padding: 24, color: "var(--muted)", fontFamily: "'IBM Plex Sans', sans-serif" }}>Loading...</div>}>
         {loading ? (
           <div style={{ color: "var(--muted)", fontFamily: "'IBM Plex Sans', sans-serif" }}>Loading risks...</div>
         ) : view === "dashboard" ? (
@@ -803,6 +814,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
         ) : (
           <MFAEnroll />
         )}
+        </React.Suspense>
       </main>
 
       {drawerRisk !== undefined && (
@@ -871,7 +883,11 @@ function AuthGate({ theme, setTheme }) {
 
   if (checking) return null;
   if (!session) return <Auth />;
-  if (needsMfa) return <MFAChallenge onVerified={() => setNeedsMfa(false)} />;
+  if (needsMfa) return (
+    <React.Suspense fallback={null}>
+      <MFAChallenge onVerified={() => setNeedsMfa(false)} />
+    </React.Suspense>
+  );
   return <Dashboard session={session} profile={profile} theme={theme} setTheme={setTheme} />;
 }
 
