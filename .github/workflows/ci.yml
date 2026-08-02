@@ -68,3 +68,19 @@ jobs:
           TEST_OWNER_PASSWORD: ${{ secrets.TEST_OWNER_PASSWORD }}
           TEST_VIEWER_EMAIL: ${{ secrets.TEST_VIEWER_EMAIL }}
           TEST_VIEWER_PASSWORD: ${{ secrets.TEST_VIEWER_PASSWORD }}
+
+  lighthouse:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Lighthouse CI
+        # Audits the public login page only — everything past it requires
+        # auth, which Lighthouse can't drive on its own. This is an
+        # informational check (warns, doesn't fail the build) rather than
+        # a hard gate, since a single-page audit isn't a full picture.
+        uses: treosh/lighthouse-ci-action@v11
+        with:
+          configPath: "./.lighthouserc.json"
