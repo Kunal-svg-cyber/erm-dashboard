@@ -1,5 +1,9 @@
 # Enterprise Risk Management Platform
 
+[![CI](https://github.com/Kunal-svg-cyber/erm-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Kunal-svg-cyber/erm-dashboard/actions/workflows/ci.yml)
+[![Deployed on Vercel](https://img.shields.io/badge/deployed-vercel-black?logo=vercel)](https://erm-dashboard-six.vercel.app)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 A production-grade Enterprise Risk Management system for tracking, scoring, and reporting organizational risk — built with database-enforced access control, two-factor authentication, inherent/residual risk modeling, and automated risk telemetry.
 
 **Live app:** erm-dashboard-six.vercel.app
@@ -29,6 +33,7 @@ A production-grade Enterprise Risk Management system for tracking, scoring, and 
 ### UX
 - **Dark mode** — full theme toggle via CSS custom properties.
 - **Responsive layout** — sidebar, stat grid, heatmap, and filters all reflow for mobile screens.
+- **Accessibility** — keyboard-operable data tables, visible focus indicators, screen-reader labels on icon-only controls, `aria-live` status announcements, and a skip-to-content link. Enforced automatically via Lighthouse CI (accessibility score gates the build below 90).
 
 ### Engineering practices
 - **CI pipeline (GitHub Actions)** — every commit runs automated unit tests and a full production build check before merge.
@@ -112,6 +117,10 @@ erm-dashboard/
 │       └── riskLogic.test.js        # Unit tests for scoring/banding/appetite logic
 └── package.json
 ```
+
+## Architecture decisions
+
+Key design tradeoffs are documented as Architecture Decision Records in [`docs/adr/`](./docs/adr) — why RLS instead of app-layer permissions, why a queued approval table instead of a database constraint, why client-side simulation for stress testing, and more.
 
 ## Setup
 
