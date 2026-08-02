@@ -122,6 +122,9 @@ function Heatmap({ risks, onCellClick, activeCell, view = "inherent" }) {
                 <button
                   key={key}
                   onClick={() => onCellClick(cellRisks.length ? key : null)}
+                  aria-label={`Likelihood ${l}, impact ${i}, score ${score}, ${band.label} band, ${cellRisks.length} risk${cellRisks.length === 1 ? "" : "s"}${active ? ", currently filtered" : ""}`}
+                  aria-pressed={active}
+                  disabled={cellRisks.length === 0}
                   style={{
                     aspectRatio: "1", background: c.bg,
                     border: active ? `2px solid var(--ink)` : isFrontier ? `1px dashed ${c.border}` : `1px solid ${c.border}33`,
@@ -154,19 +157,32 @@ function Heatmap({ risks, onCellClick, activeCell, view = "inherent" }) {
 // STEP 6: Risk register table
 // ---------------------------------------------------------------------------
 function RiskTable({ risks, onSelect, view = "inherent", thresholds }) {
+  function openRisk(r) { onSelect(r); }
+  function handleKeyDown(e, r) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openRisk(r); }
+  }
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, overflowX: "auto" }}>
       <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13 }}>
+        <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+          Risk register, {risks.length} risk{risks.length === 1 ? "" : "s"} shown
+        </caption>
         <thead>
           <tr style={{ background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
             {["ID", "Title", "Category", `Score (${view})`, "Owner", "Status", "Reviewed"].map(h => (
-              <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 600 }}>{h}</th>
+              <th key={h} scope="col" style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 600 }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {risks.map(r => (
-            <tr key={r.id} onClick={() => onSelect(r)} style={{ borderBottom: "1px solid var(--row-border)", cursor: "pointer" }}>
+            <tr
+              key={r.id} onClick={() => openRisk(r)} tabIndex={0} role="button"
+              aria-label={`Open ${r.title}, ${r.category}, score ${scoreOf(r, view)}`}
+              onKeyDown={e => handleKeyDown(e, r)}
+              className="erm-focus-row"
+              style={{ borderBottom: "1px solid var(--row-border)", cursor: "pointer" }}
+            >
               <td style={{ padding: "10px 12px", fontFamily: "'IBM Plex Mono', monospace", color: "var(--muted)" }}>{r.id}</td>
               <td style={{ padding: "10px 12px", color: "var(--ink)", maxWidth: 280 }}>{r.title}</td>
               <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{r.category}</td>
@@ -209,18 +225,32 @@ function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
       .then(({ data }) => setPendingApproval(data?.[0] || null));
   }, [risk?.id]);
 
+  // Keyboard users expect Escape to close a modal, and focus should land
+  // inside it immediately rather than staying on whatever was clicked.
+  const firstFieldRef = useRef(null);
+  useEffect(() => {
+    function handleKey(e) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", handleKey);
+    firstFieldRef.current?.focus();
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(22,35,58,0.35)", display: "flex", justifyContent: "flex-end", zIndex: 50 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 420, background: "var(--bg)", height: "100%", padding: 24, overflowY: "auto", borderLeft: "1px solid var(--border)" }}>
+      <div
+        onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-labelledby="risk-drawer-title"
+        style={{ width: 420, background: "var(--bg)", height: "100%", padding: 24, overflowY: "auto", borderLeft: "1px solid var(--border)" }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 24, fontWeight: 700, color: "var(--ink)", margin: 0 }}>
+          <h2 id="risk-drawer-title" style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: 24, fontWeight: 700, color: "var(--ink)", margin: 0 }}>
             {risk ? (readOnly ? "View risk" : "Edit risk") : "New risk"}
           </h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={20} /></button>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={20} /></button>
         </div>
 
         <fieldset disabled={readOnly} style={{ border: "none", padding: 0, margin: 0 }}>
-          <Field label="Title"><input style={inputStyle} value={form.title} onChange={e => set("title", e.target.value)} /></Field>
+          <Field label="Title"><input ref={firstFieldRef} style={inputStyle} value={form.title} onChange={e => set("title", e.target.value)} /></Field>
           <Field label="Description"><textarea style={{ ...inputStyle, height: 60 }} value={form.description} onChange={e => set("description", e.target.value)} /></Field>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -310,10 +340,17 @@ function RiskDrawer({ risk, onClose, onSave, onDelete, readOnly }) {
 }
 
 function Field({ label, children }) {
+  // Strip any dynamic "(3)" suffix so the id stays stable while a slider
+  // value changes — e.g. "Impact (4)" and "Impact (5)" both map to "impact".
+  const baseLabel = label.split("(")[0].trim();
+  const id = "field-" + baseLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const child = React.Children.only(children);
+  const enhancedChild = React.cloneElement(child, { ...child.props, id: child.props.id || id });
+
   return (
     <div style={{ marginBottom: 12 }}>
-      <label style={{ display: "block", fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", marginBottom: 4 }}>{label}</label>
-      {children}
+      <label htmlFor={id} style={{ display: "block", fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", marginBottom: 4 }}>{label}</label>
+      {enhancedChild}
     </div>
   );
 }
@@ -504,6 +541,12 @@ function Dashboard({ session, profile, theme, setTheme }) {
 
   return (
     <div className="erm-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex" }}>
+      <a href="#main-content" style={{
+        position: "absolute", left: -9999, top: 0, zIndex: 100, background: "var(--ink)", color: "var(--bg)",
+        padding: "10px 16px", borderRadius: 4, fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13,
+      }} onFocus={e => { e.target.style.left = "12px"; e.target.style.top = "12px"; }} onBlur={e => { e.target.style.left = "-9999px"; }}>
+        Skip to main content
+      </a>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
         @media (max-width: 768px) {
@@ -550,9 +593,23 @@ function Dashboard({ session, profile, theme, setTheme }) {
           opacity: 1;
           transform: translateY(-50%) translateX(0);
         }
+        /* Keyboard focus: visible outline on every interactive element.
+           Only shows for keyboard navigation (:focus-visible), not mouse
+           clicks, so it doesn't add visual noise for mouse users while
+           still making Tab-based navigation fully trackable. */
+        button:focus-visible, a:focus-visible, input:focus-visible,
+        select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+          outline: 2px solid #B0492E;
+          outline-offset: 2px;
+          border-radius: 2px;
+        }
+        .erm-focus-row:focus-visible {
+          outline: 2px solid #B0492E;
+          outline-offset: -2px;
+        }
       `}</style>
 
-      <div className="erm-sidebar" style={{ width: 68, background: "#16233A", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, gap: 8 }}>
+      <div className="erm-sidebar" role="navigation" aria-label="Main navigation" style={{ width: 68, background: "#16233A", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, gap: 8 }}>
         <Shield size={22} color="#F5F6F5" style={{ marginBottom: 16 }} />
         <SideBtn active={view === "dashboard"} onClick={() => setView("dashboard")} icon={<LayoutGrid size={18} />} label="Dashboard" />
         <SideBtn active={view === "register"} onClick={() => setView("register")} icon={<ListChecks size={18} />} label="Risk Register" />
@@ -567,20 +624,20 @@ function Dashboard({ session, profile, theme, setTheme }) {
         <SideBtn active={view === "semanticsearch"} onClick={() => setView("semanticsearch")} icon={<Search size={18} />} label="Semantic Search" />
         <div style={{ flex: 1 }} />
         <div className="erm-tooltip-wrap" style={{ position: "relative" }}>
-          <button onClick={() => setTheme(t => t === "light" ? "dark" : "light")} style={{ width: 40, height: 40, marginBottom: 4, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button onClick={() => setTheme(t => t === "light" ? "dark" : "light")} aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"} style={{ width: 40, height: 40, marginBottom: 4, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
           </button>
           <span className="erm-tooltip">{theme === "light" ? "Dark mode" : "Light mode"}</span>
         </div>
         <div className="erm-tooltip-wrap" style={{ position: "relative" }}>
-          <button onClick={() => supabase.auth.signOut()} style={{ width: 40, height: 40, marginBottom: 16, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button onClick={() => supabase.auth.signOut()} aria-label="Sign out" style={{ width: 40, height: 40, marginBottom: 16, borderRadius: 6, border: "none", background: "transparent", color: "#8B9AAC", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <LogOut size={18} />
           </button>
           <span className="erm-tooltip">Sign out</span>
         </div>
       </div>
 
-      <div className="erm-main" style={{ flex: 1, padding: "24px 32px", minWidth: 0 }}>
+      <main id="main-content" className="erm-main" style={{ flex: 1, padding: "24px 32px", minWidth: 0 }}>
         <div className="erm-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
           <div>
             <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)" }}>
@@ -644,12 +701,12 @@ function Dashboard({ session, profile, theme, setTheme }) {
         </div>
 
         {errorMsg && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#EFD3D0", border: "1px solid #8E2E2E", color: "#5F1E1E", borderRadius: 4, padding: "8px 12px", marginBottom: 16, fontSize: 13 }}>
+          <div role="alert" aria-live="assertive" style={{ display: "flex", alignItems: "center", gap: 8, background: "#EFD3D0", border: "1px solid #8E2E2E", color: "#5F1E1E", borderRadius: 4, padding: "8px 12px", marginBottom: 16, fontSize: 13 }}>
             <AlertTriangle size={14} /> {errorMsg}
           </div>
         )}
         {importMsg && (
-          <div style={{ background: "#E4EEE8", border: "1px solid #4C7A5E", color: "#2C4E3B", borderRadius: 4, padding: "8px 12px", marginBottom: 16, fontSize: 13 }}>
+          <div role="status" aria-live="polite" style={{ background: "#E4EEE8", border: "1px solid #4C7A5E", color: "#2C4E3B", borderRadius: 4, padding: "8px 12px", marginBottom: 16, fontSize: 13 }}>
             {importMsg}
           </div>
         )}
@@ -746,7 +803,7 @@ function Dashboard({ session, profile, theme, setTheme }) {
         ) : (
           <MFAEnroll />
         )}
-      </div>
+      </main>
 
       {drawerRisk !== undefined && (
         <RiskDrawer
@@ -764,12 +821,12 @@ function Dashboard({ session, profile, theme, setTheme }) {
 function SideBtn({ active, onClick, icon, label }) {
   return (
     <div className="erm-tooltip-wrap" style={{ position: "relative" }}>
-      <button onClick={onClick} style={{
+      <button onClick={onClick} aria-label={label} aria-current={active ? "page" : undefined} style={{
         width: 40, height: 40, borderRadius: 6, border: "none", cursor: "pointer",
         background: active ? "#2C3E5A" : "transparent", color: active ? "#F5F6F5" : "#8B9AAC",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>{icon}</button>
-      {label && <span className="erm-tooltip">{label}</span>}
+      {label && <span className="erm-tooltip" role="tooltip">{label}</span>}
     </div>
   );
 }

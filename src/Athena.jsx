@@ -95,7 +95,7 @@ export default function Athena() {
             fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13.5, background: "var(--card)", color: "var(--ink)",
           }}
         />
-        <button type="submit" disabled={busy || !input.trim()} style={{
+        <button type="submit" aria-label="Send message" disabled={busy || !input.trim()} style={{
           padding: "0 18px", borderRadius: 6, border: "none", background: "var(--ink)", color: "var(--card)",
           cursor: busy ? "not-allowed" : "pointer", display: "flex", alignItems: "center",
         }}>
