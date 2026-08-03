@@ -4,68 +4,82 @@
 [![Deployed on Vercel](https://img.shields.io/badge/deployed-vercel-black?logo=vercel)](https://erm-dashboard-six.vercel.app)
 [![License: Proprietary](https://img.shields.io/badge/license-All%20Rights%20Reserved-red.svg)](./LICENSE)
 
-A production-grade Enterprise Risk Management system for tracking, scoring, and reporting organizational risk — built with database-enforced access control, two-factor authentication, inherent/residual risk modeling, and automated risk telemetry.
+A production-grade Enterprise Risk Management system modeling the core workflow of an institutional risk function — risk identification, inherent/residual scoring, mitigation tracking, governance, quantitative simulation, and executive reporting — built with database-enforced access control and automated risk telemetry.
 
 **Live app:** erm-dashboard-six.vercel.app
 
 ## Features
 
 ### Security & access control
-- **Row-Level Security (RLS)** — every read/write to the risk register is authorized at the PostgreSQL layer, not the frontend. A three-tier role model (`admin` / `owner` / `viewer`) is enforced via database policies, so even a compromised frontend cannot bypass permissions.
-- **Two-factor authentication (TOTP)** — users enroll via QR code from an authenticator app. Login is gated on session assurance level (AAL1 → AAL2), not just session presence, via a dedicated MFA challenge screen that sits between authentication and dashboard access.
-- **Client-side login rate limiting** — progressive lockout (exponential backoff) after repeated failed sign-in attempts, layered on top of Supabase's own server-side rate limits.
-- **Password strength enforcement** — signup requires 8+ characters with mixed case, numbers, and symbols.
-- **Hardened database functions** — `SECURITY DEFINER` execute scope and `search_path` mutability issues (flagged by Supabase's security linter) are explicitly locked down.
+- **Row-Level Security (RLS)** — every read/write to the risk register is authorized at the PostgreSQL layer, not the frontend. A three-tier role model (`admin` / `owner` / `viewer`) is enforced via database policies.
+- **Two-factor authentication (TOTP)** — login is gated on session assurance level (AAL1 → AAL2) via a dedicated MFA challenge screen, not just session presence.
+- **Rate-limited AI endpoints** — Athena, semantic search, and auto-embedding are capped per-user, per-hour to protect free-tier API quota. Admins are exempt; enforced server-side before any external API call is made, so a blocked request costs zero quota.
+- **Client-side login rate limiting** — progressive lockout after repeated failed sign-in attempts, layered on Supabase's own server-side limits.
+- **Hardened database functions** — `SECURITY DEFINER` execute scope and `search_path` mutability, flagged by Supabase's security linter, are explicitly locked down.
 
-### Risk management
-- **Inherent vs. residual risk tracking** — every risk carries two scores: inherent (before mitigation) and residual (after). A dashboard-wide toggle switches the heatmap, stats, and register between the two views, so mitigation's actual effect on exposure is visible, not just the starting severity.
-- **Per-category risk appetite thresholds** — each risk category has its own configurable tolerance (not one global cutoff). Risks that meet or exceed their category's threshold are flagged with a ⚠ indicator wherever they appear. Admins manage thresholds in-app, no SQL required.
-- **5x5 likelihood x impact heatmap** with a visual risk-appetite frontier line; clickable cells filter the register.
-- **Automatic exposure trend tracking** — a database trigger snapshots aggregate risk exposure on every risk mutation, building a real historical time series with zero manual logging.
-- **Full risk register** — create, edit, and track risks with category, likelihood/impact scoring, owner, status, and mitigation plans.
-- **Bulk import from CSV or PDF** — CSV and PDF table imports share the same validation engine, with flexible/fuzzy column-name matching, forgiving date parsing, and clear per-row error messages. PDF import reconstructs tables directly from text positions (no OCR needed) and automatically merges wrapped multi-line cells back into single rows.
-- **Executive PDF reports** — generates board-ready PDFs with live-captured chart images (heatmap + trend), not static templates.
+### Governance
+- **Approval workflow** — an owner cannot unilaterally close or downgrade a Critical risk; the change queues for admin sign-off instead of applying directly.
+- **Immutable risk history** — a database trigger logs every status/score change automatically, with zero manual audit logging.
+- **Per-category risk appetite thresholds** — tolerance is configurable per category rather than one global cutoff, with automatic breach flagging.
 
-### Administration
-- **In-app admin panel** — promote/demote user roles and edit category risk-appetite thresholds without touching SQL.
-- **Automated email alerts** — a scheduled serverless function checks daily for critical or overdue risks and emails a summary via Resend.
+### Risk methodology
+- **Inherent vs. residual risk modeling** — every risk carries a before- and after-mitigation score, with a dashboard-wide toggle to compare both.
+- **5x5 likelihood x impact heatmap** with a visual risk-appetite frontier line.
+- **Automatic exposure trend tracking** via database triggers — zero manual logging.
 
-### UX
-- **Dark mode** — full theme toggle via CSS custom properties.
-- **Responsive layout** — sidebar, stat grid, heatmap, and filters all reflow for mobile screens.
-- **Accessibility** — keyboard-operable data tables, visible focus indicators, screen-reader labels on icon-only controls, `aria-live` status announcements, and a skip-to-content link. Enforced automatically via Lighthouse CI (accessibility score gates the build below 90).
+### Quantitative & AI capabilities
+- **Monte Carlo simulation** — models portfolio exposure as a probability distribution (P50/P90/P95/P99), not a single point score, using triangular-distribution sampling per risk.
+- **Scenario-based stress testing** — preset macro scenarios (market volatility, liquidity crunch, cyber surge, regulatory crackdown, counterparty default) plus custom shocks, with AI-generated executive narratives.
+- **Athena** — a natural-language risk assistant grounded strictly in live database state (never invents data), with multi-turn conversation memory.
+- **Semantic search** — vector-embedding search (pgvector + Gemini embeddings) over risk descriptions and mitigation plans, matching by meaning rather than keyword.
+- **Portfolio concentration analysis** — flags when too much aggregate exposure sits with a single owner or category.
+- **Bulk import from CSV or PDF** — shared validation engine with fuzzy column matching; PDF import reconstructs tables from raw text positions (no OCR) and auto-merges wrapped multi-line cells.
+- **Executive PDF reports** — board-ready output with live-captured chart images, not static templates.
+
+### Real-time & collaboration
+- **Live updates** via Supabase Realtime — risk changes propagate to every open session instantly, no manual refresh.
 
 ### Engineering practices
-- **CI pipeline (GitHub Actions)** — every commit runs automated unit tests and a full production build check before merge.
-- **Unit-tested core logic** — risk scoring, banding, and appetite-threshold logic is extracted into a pure, independently tested module (13 tests, covering inherent/residual scoring and threshold edge cases).
+- **CI pipeline (GitHub Actions)** — on every commit: unit tests, RLS permission tests executed against the live database (signs in as three real roles and proves what each can/can't do), a production build check, Playwright E2E tests driving the actual deployed site, and Lighthouse accessibility auditing.
+- **Performance** — code-split via `React.lazy`; reduced initial bundle 42% (414KB → 238KB gzipped) by deferring non-default views and PDF libraries until actually needed.
+- **Accessibility** — keyboard-operable data tables, visible focus indicators, screen-reader labels, `aria-live` status announcements, skip-to-content link.
+- **Error monitoring** — Sentry integration in production.
+- **Architecture Decision Records** — key tradeoffs documented in [`docs/adr/`](./docs/adr), including real bugs found and fixed during development.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Client["React + Vite (hosted on Vercel)"]
-        UI[Dashboard / Register / Admin / Security views]
+    subgraph Client["React + Vite (Vercel, code-split)"]
+        UI[Dashboard / Register / Admin / Athena / Stress Test / Semantic Search]
     end
 
     subgraph Supabase["Supabase (managed Postgres)"]
-        Auth[Auth: email/password + TOTP 2FA sessions]
-        DB[(Postgres: profiles, risks, exposure_snapshots, category_thresholds)]
+        Auth[Auth: email/password + TOTP 2FA]
+        DB[(Postgres: risks, profiles, exposure_snapshots,<br/>category_thresholds, risk_approvals, risk_history, api_calls)]
+        Vector[(pgvector: risk embeddings)]
         RLS[Row Level Security policies]
-        Trigger[Trigger: snapshot_exposure on risk change]
-        EdgeFn[Edge Function: check-risks]
-        Cron[pg_cron: daily schedule]
+        Triggers[Triggers: snapshot_exposure, log_risk_change]
+        EdgeFns[Edge Functions: athena-assistant,<br/>semantic-search, embed-risk, check-risks]
+        Cron[pg_cron: daily alerts + cleanup]
+        Realtime[Realtime: postgres_changes]
     end
 
+    Gemini[Google Gemini API]
     Resend[Resend Email API]
+    Sentry[Sentry]
 
-    UI -->|sign in / sign up / MFA challenge| Auth
-    UI -->|CRUD via supabase-js, RLS-enforced| DB
+    UI -->|auth + MFA| Auth
+    UI -->|CRUD, RLS-enforced| DB
+    UI <-->|live subscriptions| Realtime
     DB --> RLS
-    DB --> Trigger
-    Trigger --> DB
-    Cron -->|invokes daily| EdgeFn
-    EdgeFn -->|reads| DB
-    EdgeFn -->|sends alert| Resend
+    DB --> Triggers
+    UI -->|AI chat, search, embed| EdgeFns
+    EdgeFns --> Gemini
+    EdgeFns --> Vector
+    Cron --> EdgeFns
+    EdgeFns --> Resend
+    UI -->|errors| Sentry
 ```
 
 ## Tech stack
@@ -73,67 +87,80 @@ flowchart TD
 | Layer | Technology |
 |---|---|
 | Frontend | React 18, Vite, `lucide-react`, `recharts` |
-| Backend | Supabase (PostgreSQL, Auth, Row-Level Security, Edge Functions) |
-| Reporting | `jspdf`, `html2canvas` (executive PDF with live chart capture) |
-| Data import | `papaparse` (CSV), `pdfjs-dist` (PDF table extraction) |
-| Hosting | Vercel (auto-deploy from GitHub on push to `main`) |
-| Email | Resend, triggered via Supabase `pg_cron` |
-| CI | GitHub Actions (test + build verification on every commit) |
-| Testing | Vitest |
+| Backend | Supabase (PostgreSQL, pgvector, Auth, Row-Level Security, Edge Functions, Realtime) |
+| AI | Google Gemini (chat + embeddings), rate-limited per-user server-side |
+| Reporting | `jspdf`, `html2canvas`, `papaparse`, `pdfjs-dist` |
+| Hosting | Vercel (auto-deploy from GitHub) |
+| Email | Resend, triggered via `pg_cron` |
+| CI/Testing | GitHub Actions, Vitest, Playwright, Lighthouse CI |
+| Monitoring | Sentry |
 
 ## Data model
 
 | Table | Purpose |
 |---|---|
 | `profiles` | One row per user; `role` is `admin` / `owner` / `viewer` |
-| `risks` | The register: title, category, inherent + residual likelihood/impact, owner, status, mitigation plan, dates |
-| `exposure_snapshots` | Append-only aggregate history, written automatically by a trigger on every risk change |
-| `category_thresholds` | Per-category risk appetite score, editable by admins |
+| `risks` | The register: inherent + residual likelihood/impact, category, status, mitigation, vector embedding |
+| `exposure_snapshots` | Append-only aggregate history, written by trigger |
+| `category_thresholds` | Per-category risk appetite score |
+| `risk_approvals` | Queued approval requests for Critical risk changes |
+| `risk_history` | Immutable log of status/score changes, written by trigger |
+| `api_calls` | Rate-limit tracking for AI-backed Edge Functions |
 
 ## Project structure
 
 ```
 erm-dashboard/
-├── .github/workflows/ci.yml         # CI: tests + build check on every push
-├── supabase-schema.sql              # Core schema: profiles, risks, RLS policies
-├── elite-upgrade-schema.sql         # Admin permissions + exposure_snapshots + trigger
-├── residual-risk-schema.sql         # Residual risk fields + category_thresholds table
+├── .github/workflows/ci.yml         # Unit + RLS integration + E2E + Lighthouse
+├── .lighthouserc.json
+├── playwright.config.js
+├── docs/adr/                        # Architecture Decision Records
+├── supabase-schema.sql              # Core schema: profiles, risks, RLS
+├── elite-upgrade-schema.sql         # Admin permissions, exposure_snapshots
+├── residual-risk-schema.sql         # Residual fields, category_thresholds
+├── approval-and-history-schema.sql  # risk_approvals, risk_history, triggers
+├── semantic-search-schema.sql       # pgvector, embedding column, match_risks
+├── rate-limiting-schema.sql         # api_calls table, cleanup cron
+├── security-advisor-fixes.sql
 ├── supabase-function/
-│   └── check-risks.ts               # Edge Function: daily critical/overdue risk alerts
+│   ├── athena-assistant.ts          # AI risk assistant (rate-limited)
+│   ├── semantic-search.ts           # Vector search (rate-limited)
+│   ├── embed-risk.ts                # Auto-embed on save (rate-limited)
+│   └── check-risks.ts               # Daily critical/overdue alert email
 ├── src/
-│   ├── App.jsx                      # Root: theme provider, auth gate, dashboard shell
-│   ├── Auth.jsx                     # Sign in / sign up, password strength, rate limiting
-│   ├── MFAChallenge.jsx             # 2FA code verification screen (post-login gate)
-│   ├── MFAEnroll.jsx                # 2FA enrollment (QR code + confirm)
-│   ├── AdminPanel.jsx               # User role management + risk appetite thresholds
-│   ├── TrendChart.jsx               # Exposure history chart
-│   ├── riskLogic.js                 # Pure scoring/banding/appetite logic (unit tested)
-│   ├── importShared.js              # Shared header-mapping + row validation (CSV + PDF)
-│   ├── importUtils.js               # CSV import + template download
-│   ├── pdfImportUtils.js            # PDF table extraction + import
-│   ├── exportUtils.js               # CSV/PDF export
-│   ├── executiveReport.js           # Executive PDF generation (chart capture)
+│   ├── App.jsx                      # Root: theme, auth gate, dashboard shell
+│   ├── Auth.jsx / MFAChallenge.jsx / MFAEnroll.jsx
+│   ├── AdminPanel.jsx               # Roles, thresholds, pending approvals
+│   ├── Athena.jsx / StressTest.jsx / MonteCarlo.jsx
+│   ├── ConcentrationAnalysis.jsx / SemanticSearch.jsx / TrendChart.jsx
+│   ├── riskLogic.js                 # Pure scoring/banding logic (unit tested)
+│   ├── importShared.js / importUtils.js / pdfImportUtils.js
+│   ├── exportUtils.js / executiveReport.js
 │   └── __tests__/
-│       └── riskLogic.test.js        # Unit tests for scoring/banding/appetite logic
+│       ├── riskLogic.test.js
+│       └── integration/rls.integration.test.js
+├── e2e/critical-flows.spec.js
 └── package.json
 ```
 
-## Architecture decisions
-
-Key design tradeoffs are documented as Architecture Decision Records in [`docs/adr/`](./docs/adr) — why RLS instead of app-layer permissions, why a queued approval table instead of a database constraint, why client-side simulation for stress testing, and more.
-
 ## Setup
 
-This project has no local build requirement — it's designed to be edited via the GitHub web UI and deployed automatically by Vercel.
+No local build required — designed to be edited via the GitHub web UI and deployed automatically by Vercel.
 
-1. Run `supabase-schema.sql`, then `elite-upgrade-schema.sql`, then `residual-risk-schema.sql` in the Supabase SQL Editor (in that order)
-2. Deploy `supabase-function/check-risks.ts` via the Supabase dashboard's Edge Function editor
-3. Set environment variables in Vercel: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-4. Set repository secrets in GitHub Actions (same two values) so CI builds succeed
-5. Enable TOTP under Supabase Authentication → Multi-Factor
+1. Run the SQL files in Supabase's SQL Editor, in the order listed under **Project structure** above
+2. Deploy each file in `supabase-function/` via the Supabase Dashboard's Edge Function editor
+3. Enable `pgvector`, `pg_cron`, and Realtime (on the `risks` table) in Supabase
+4. Set environment variables in Vercel: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SENTRY_DSN`
+5. Set the same as GitHub Actions secrets, plus `TEST_ADMIN_EMAIL/PASSWORD`, `TEST_OWNER_EMAIL/PASSWORD`, `TEST_VIEWER_EMAIL/PASSWORD` for CI
+6. Add `GEMINI_API_KEY` and `RESEND_API_KEY` as Edge Function secrets
+
+## Architecture decisions
+
+Key tradeoffs — why RLS over app-layer auth, the 2FA race condition found and fixed, why stress testing runs client-side, the free-tier serverless architecture, and more — are documented in [`docs/adr/`](./docs/adr).
 
 ## Security notes
 
-- All access control is enforced by Postgres RLS policies, not hidden UI buttons — a `viewer` role cannot write to the `risks` table even via a direct API call, and cannot bypass 2FA even if the client-side session state resolves before verification (a real race condition found and fixed during development).
-- The Supabase `service_role` key is only ever used inside the Edge Function (server-side); the frontend uses only the public `anon`/publishable key.
-- `SECURITY DEFINER` functions have explicit `search_path` pinning and restricted execute grants, per Supabase's security linter recommendations.
+- All access control is enforced by Postgres RLS policies, not hidden UI buttons.
+- The Supabase `service_role` key is only ever used inside Edge Functions; the frontend uses only the public `anon` key.
+- `SECURITY DEFINER` functions have explicit `search_path` pinning and restricted execute grants.
+- AI-backed endpoints are rate-limited server-side, before any external API call, to prevent quota exhaustion.
