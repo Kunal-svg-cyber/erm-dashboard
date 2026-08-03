@@ -16,7 +16,11 @@ export default function SemanticSearch({ onSelectRisk }) {
     const { data, error: fnError } = await supabase.functions.invoke("semantic-search", { body: { query } });
     setBusy(false);
     if (fnError || data?.error) {
-      setError(fnError?.message || data?.error || "Search failed.");
+      let message = data?.error || fnError?.message || "Search failed.";
+      if (fnError?.context) {
+        try { message = (await fnError.context.json())?.error || message; } catch { /* keep fallback */ }
+      }
+      setError(message);
       return;
     }
     setResults(data.results || []);

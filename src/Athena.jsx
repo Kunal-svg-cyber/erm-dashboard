@@ -39,7 +39,14 @@ export default function Athena() {
 
     setBusy(false);
     if (fnError || data?.error) {
-      setError((fnError?.message) || data?.error || "Something went wrong reaching Athena.");
+      // supabase-js only gives a generic "non-2xx" message by default —
+      // the actual reason (e.g. the rate-limit message) is in the raw
+      // response body, so pull it out manually when possible.
+      let message = data?.error || fnError?.message || "Something went wrong reaching Athena.";
+      if (fnError?.context) {
+        try { message = (await fnError.context.json())?.error || message; } catch { /* keep fallback */ }
+      }
+      setError(message);
       return;
     }
     setMessages(prev => [...prev, { role: "assistant", text: data.answer }]);
