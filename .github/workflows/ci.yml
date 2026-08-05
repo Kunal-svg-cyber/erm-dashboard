@@ -21,6 +21,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Audit dependencies for known vulnerabilities
+        # Scoped to production dependencies only (--omit=dev) — vitest/vite
+        # are dev-only tooling that never ships to end users. The one
+        # critical CVE in that chain (arbitrary file read via `vitest --ui`)
+        # requires a feature this project never invokes (`vitest run` only).
+        # Fails the build on CRITICAL severity in what actually ships.
+        run: npm audit --omit=dev --audit-level=critical
+
       - name: Run unit tests
         run: npm test -- --run
 
