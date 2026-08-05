@@ -18,7 +18,7 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^0.383.0",
     "papaparse": "^5.4.1",
-    "pdfjs-dist": "^4.0.379",
+    "pdfjs-dist": "^6.2.108",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^2.12.7"
