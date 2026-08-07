@@ -1,10 +1,4 @@
-// End-to-end tests: drive the actual deployed site with a real headless
-// browser, the same way a person would. This catches things unit tests
-// can't — a button that's visually broken, a form that doesn't submit,
-// a role check that works in the database but got wired up wrong in the UI.
-//
-// Requires TEST_OWNER_EMAIL/PASSWORD and TEST_VIEWER_EMAIL/PASSWORD as
-// env vars (same test accounts used by the RLS integration tests).
+
 
 import { test, expect } from "@playwright/test";
 
@@ -22,8 +16,6 @@ test("viewer role cannot see the New Risk button", async ({ page }) => {
   await page.getByPlaceholder("Password").fill(process.env.TEST_VIEWER_PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  // Only proceed past 2FA if this test account doesn't have it enabled;
-  // if it does, this test intentionally stops here rather than guessing a code.
   await page.waitForSelector("text=Enterprise risk exposure", { timeout: 15000 }).catch(() => {});
 
   await expect(page.getByRole("button", { name: /New risk/i })).toHaveCount(0);
